@@ -1,6 +1,7 @@
 #include "setup.hpp"
 
 #include <cassert>
+#include <algorithm>
 
 namespace {
     /// <summary>
@@ -20,6 +21,7 @@ namespace {
     VkPhysicalDevice selectPhysicalDevice(VkInstance aInstance, VkSurfaceKHR aSurface);
     VkDevice createLogicalDevice(VkPhysicalDevice aPhysicalDev, std::vector<std::uint32_t>& aQueueIndices, std::vector<char const*>& aExtensions);
     std::optional<std::uint32_t> findQueueFamily(VkPhysicalDevice aPhysicalDev, VkQueueFlags aQueueFlags, VkSurfaceKHR aSurface);
+    void swapchainSetup(app::AppContext* aApp);
 
     VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
 
@@ -46,6 +48,10 @@ namespace {
 namespace app {
 
 	void AppContext::cleanup() {
+        vkDestroySwapchainKHR(logicalDevice, swapchain, nullptr);
+
+        vkDestroyDevice(logicalDevice, nullptr);
+
 #       if !defined(NDEBUG)
 		DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 #		endif
@@ -80,6 +86,12 @@ namespace app {
 
         // Get and set the device to use with Vulkan (physical and logical)
         deviceSetup(&context);
+
+        // Set up the swapchain
+        swapchainSetup(&context);
+
+        // TODO: Get the swapchain image and imageviews
+                
 
         return context;
 	}
@@ -263,10 +275,9 @@ namespace {
 
         // Get the graphics queue(s) Ideally one graphics queue can do both jobs
         // Store the indices of the graphics queue and the present queue if used.
-        std::vector<std::uint32_t> queueFamilyIndices;
         if (auto const index = findQueueFamily(aApp->physicalDevice, VK_QUEUE_GRAPHICS_BIT, aApp->surface)) {
             aApp->graphicsFamilyIndex = *index;
-            queueFamilyIndices.emplace_back(*index);
+            aApp->queueFamilyIndices.emplace_back(*index);
         }
         else {
             auto graphics = findQueueFamily(aApp->physicalDevice, VK_QUEUE_GRAPHICS_BIT, VK_NULL_HANDLE);
@@ -277,17 +288,16 @@ namespace {
             aApp->graphicsFamilyIndex = *graphics;
             aApp->presentFamilyIndex = *present;
 
-            queueFamilyIndices.emplace_back(*graphics);
-            queueFamilyIndices.emplace_back(*present);
+            aApp->queueFamilyIndices.emplace_back(*graphics);
+            aApp->queueFamilyIndices.emplace_back(*present);
         }
 
-        return;
         // Create the logical device
-        aApp->logicalDevice = createLogicalDevice(aApp->physicalDevice, queueFamilyIndices, extensionsToEnable);
+        aApp->logicalDevice = createLogicalDevice(aApp->physicalDevice, aApp->queueFamilyIndices, extensionsToEnable);
 
         // Set the queues in the app context
         vkGetDeviceQueue(aApp->logicalDevice, aApp->graphicsFamilyIndex, 0, &aApp->graphicsQueue);
-        if (queueFamilyIndices.size() >= 2) {
+        if (aApp->queueFamilyIndices.size() >= 2) {
             vkGetDeviceQueue(aApp->logicalDevice, aApp->presentFamilyIndex, 0, &aApp->presentQueue);
         }
         else {
@@ -420,7 +430,7 @@ namespace {
         vkGetPhysicalDeviceFeatures2(aPhysicalDev, &availableFeatures);
         // Check for Anisotropic Filtering support - Enable if so
         if (availableFeatures.features.samplerAnisotropy) {
-            std::printf("Anisotropic filtering available\n");
+            std::printf("Anisotropic filtering enabled\n");
             features.samplerAnisotropy = VK_TRUE;
         }
 
@@ -440,6 +450,96 @@ namespace {
         }
 
         return device;
+    }
+
+    void swapchainSetup(app::AppContext* aApp) {
+        // Get the capabilities of the swapchain
+        VkSurfaceCapabilitiesKHR capabilities;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(aApp->physicalDevice, aApp->surface, &capabilities);
+
+        // How many images can be in the swapchain
+        // Start with the minimum
+        std::uint32_t imageCount = capabilities.minImageCount + 1;
+        // Check that there is a maximum number of swapchain images and that we
+        // haven't exceeded the maximum amount.
+        if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
+            // Set to the maximum
+            imageCount = capabilities.maxImageCount;
+        }
+
+        // Get the swapchain extent
+        aApp->swapchainExtent = capabilities.currentExtent;
+        // Check that the window can be modified
+        if (capabilities.currentExtent.width == std::numeric_limits<std::uint32_t>::max()) {
+            int width, height;
+            glfwGetFramebufferSize(aApp->window, &width, &height);
+
+            aApp->swapchainExtent.width = std::clamp(std::uint32_t(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+            aApp->swapchainExtent.height = std::clamp(std::uint32_t(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+        }
+
+        // Get the available surface formats for the swapchain
+        std::uint32_t numSurfaceFormats;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(aApp->physicalDevice, aApp->surface, &numSurfaceFormats, nullptr);
+        std::vector<VkSurfaceFormatKHR> surfaceFormats(numSurfaceFormats);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(aApp->physicalDevice, aApp->surface, &numSurfaceFormats, surfaceFormats.data());
+
+        // Default to any format in the list before attempting to find the best
+        VkSurfaceFormatKHR bestSurfaceFormat = surfaceFormats[0];
+
+        // Select the most desireable surface format
+        for (VkSurfaceFormatKHR format : surfaceFormats) {
+            // Best option
+            if (VK_FORMAT_R8G8B8A8_SRGB == format.format && VK_COLOR_SPACE_SRGB_NONLINEAR_KHR == format.colorSpace) {
+                bestSurfaceFormat = format;
+                break;
+            }
+            // Second best option
+            if (VK_FORMAT_B8G8R8A8_SRGB == format.format && VK_COLOR_SPACE_SRGB_NONLINEAR_KHR == format.colorSpace) {
+                bestSurfaceFormat = format;
+                //break;
+            }
+        }
+
+        aApp->swapchainFormat = bestSurfaceFormat.format;
+
+        // Use the FIFO present mode which is guaranteed to be available
+        // To get other options follow a similar format to the one used to 
+        // find the best surface format
+        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+
+        // Create swap chain info
+        VkSwapchainCreateInfoKHR swapchainInfo{};
+        swapchainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+        swapchainInfo.surface = aApp->surface;
+        swapchainInfo.minImageCount = imageCount;
+        swapchainInfo.imageFormat = bestSurfaceFormat.format;
+        swapchainInfo.imageColorSpace = bestSurfaceFormat.colorSpace;
+        swapchainInfo.imageExtent = aApp->swapchainExtent;
+        swapchainInfo.imageArrayLayers = 1;
+        swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        swapchainInfo.preTransform = capabilities.currentTransform;
+        swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        swapchainInfo.presentMode = presentMode;
+        swapchainInfo.clipped = VK_TRUE;
+        //chainInfo.oldSwapchain = aOldSwapchain;
+        if (aApp->queueFamilyIndices.size() <= 1) {
+            swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        }
+        else {
+            //Multiple queues may access this
+            swapchainInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+            swapchainInfo.queueFamilyIndexCount = std::uint32_t(aApp->queueFamilyIndices.size());
+            swapchainInfo.pQueueFamilyIndices = aApp->queueFamilyIndices.data();
+        }
+
+        // Create the swapchain
+        aApp->swapchain;
+        if (vkCreateSwapchainKHR(aApp->logicalDevice, &swapchainInfo, nullptr, &aApp->swapchain) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create swapchain.");
+        }
+
+        return;
     }
 
 }

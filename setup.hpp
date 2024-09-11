@@ -15,21 +15,26 @@ namespace app
 {
 	class AppContext {
 	public:
-        // Window Related
+        // Window
 		GLFWwindow* window;
 		VkInstance instance;
 		VkSurfaceKHR surface;
 
-        // Device Related
+        // Device
         VkPhysicalDevice physicalDevice;
 		VkDevice logicalDevice;
 
 		// Queues
+		std::vector<std::uint32_t> queueFamilyIndices;
 		std::uint32_t graphicsFamilyIndex = 0;
 		VkQueue graphicsQueue = VK_NULL_HANDLE;
 		std::uint32_t presentFamilyIndex = 0;
 		VkQueue presentQueue = VK_NULL_HANDLE;
 
+		// Swapchain
+		VkSwapchainKHR swapchain;
+		VkFormat swapchainFormat;
+		VkExtent2D swapchainExtent;
 
         // Debug Related
 		VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;

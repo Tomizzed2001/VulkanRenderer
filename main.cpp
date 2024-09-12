@@ -29,6 +29,13 @@ namespace {
     /// <param name="app">The context of the application</param>
     /// <returns>Render pass</returns>
     VkRenderPass createRenderPass(app::AppContext& app);
+
+    /// <summary>
+    /// Creates a descriptor set layout to feed into the pipeline
+    /// </summary>
+    /// <param name="app">The context of the application</param>
+    /// <returns>Descriptor set layout</returns>
+    VkDescriptorSetLayout createDescriptorSetLayout(app::AppContext& app);
 }
 
 int main() {
@@ -42,12 +49,16 @@ int main() {
         // Create the renderpass
         VkRenderPass renderPass = createRenderPass(application);
 
+        // Create the descriptor set layout
+        VkDescriptorSetLayout descriptorSetLayout = createDescriptorSetLayout(application);
+
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
             glfwPollEvents();
         }
 
         // Clean up and close the application
+        vkDestroyDescriptorSetLayout(application.logicalDevice, descriptorSetLayout, nullptr);
         vkDestroyRenderPass(application.logicalDevice, renderPass, nullptr);
         application.cleanup();
 
@@ -160,4 +171,29 @@ namespace {
         return renderPass;
     }
 
+    VkDescriptorSetLayout createDescriptorSetLayout(app::AppContext& app) {
+        // Set the bindings for the descriptor
+        // These are accessed in the shader as binding = n
+        // All data passed into the shaders must have a binding
+        int const numberOfBindings = 1;
+        VkDescriptorSetLayoutBinding bindings[numberOfBindings]{};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        // Set the info of the descriptor
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
+        descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        descriptorSetLayoutInfo.bindingCount = numberOfBindings;
+        descriptorSetLayoutInfo.pBindings = bindings;
+
+        VkDescriptorSetLayout descriptorSetLayout;
+        if (vkCreateDescriptorSetLayout(app.logicalDevice, &descriptorSetLayoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor set layout");
+        }
+
+        return descriptorSetLayout;
+
+    }
 }

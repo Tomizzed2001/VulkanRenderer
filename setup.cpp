@@ -22,6 +22,7 @@ namespace {
     VkDevice createLogicalDevice(VkPhysicalDevice aPhysicalDev, std::vector<std::uint32_t>& aQueueIndices, std::vector<char const*>& aExtensions);
     std::optional<std::uint32_t> findQueueFamily(VkPhysicalDevice aPhysicalDev, VkQueueFlags aQueueFlags, VkSurfaceKHR aSurface);
     void swapchainSetup(app::AppContext* aApp);
+    void createSwapchainImages(app::AppContext* aApp);
 
     VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
 
@@ -48,20 +49,32 @@ namespace {
 namespace app {
 
 	void AppContext::cleanup() {
+        // Destroy swapchain image views
+        for (size_t i = 0; i < swapchainImageViews.size(); i++) {
+            vkDestroyImageView(logicalDevice, swapchainImageViews[i], nullptr);
+        }
+
+        // Destroy the swapchain
         vkDestroySwapchainKHR(logicalDevice, swapchain, nullptr);
 
+        // Destroy the logical device
         vkDestroyDevice(logicalDevice, nullptr);
 
+        // Destroy the debug messenger if defined
 #       if !defined(NDEBUG)
 		DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 #		endif
 
+        // Destroy the surface of the window
 		vkDestroySurfaceKHR(instance, surface, nullptr);
 
+        // Destroy the Vulkan instance
 		vkDestroyInstance(instance, nullptr);
 
+        // Destroy the GLFW window
 		glfwDestroyWindow(window);
 
+        // End the program
 		glfwTerminate();
 	}
 
@@ -90,8 +103,9 @@ namespace app {
         // Set up the swapchain
         swapchainSetup(&context);
 
-        // TODO: Get the swapchain image and imageviews
-                
+        // Get the swapchain image and the image views for each of the 
+        // swapchain images created
+        createSwapchainImages(&context);      
 
         return context;
 	}
@@ -452,6 +466,10 @@ namespace {
         return device;
     }
 
+    /// <summary>
+    /// Creates the swapchain for the application
+    /// </summary>
+    /// <param name="aApp">The application context</param>
     void swapchainSetup(app::AppContext* aApp) {
         // Get the capabilities of the swapchain
         VkSurfaceCapabilitiesKHR capabilities;
@@ -542,4 +560,44 @@ namespace {
         return;
     }
 
+    /// <summary>
+    /// Creates the swapchain images for the application's swapchain
+    /// </summary>
+    /// <param name="aApp">The application context</param>
+    void createSwapchainImages(app::AppContext* aApp) {
+        // Get swapchain image handles with vkGetSwapchainImagesKHR
+        std::uint32_t numImages = 0;
+        vkGetSwapchainImagesKHR(aApp->logicalDevice, aApp->swapchain, &numImages, nullptr);
+        aApp->swapchainImages.resize(numImages);
+        vkGetSwapchainImagesKHR(aApp->logicalDevice, aApp->swapchain, &numImages, aApp->swapchainImages.data());
+    
+        // For each of the images in the swapchain
+        for (size_t i = 0; i < aApp->swapchainImages.size(); i++) {
+            // Create a VkImageView
+            VkImageViewCreateInfo imageViewInfo{};
+            imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            imageViewInfo.image = aApp->swapchainImages[i];
+            imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            imageViewInfo.format = aApp->swapchainFormat;
+            imageViewInfo.components = VkComponentMapping{
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY
+            };
+            imageViewInfo.subresourceRange = VkImageSubresourceRange{
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                0, 1,
+                0, 1
+            };
+
+            VkImageView imageView;
+            if (vkCreateImageView(aApp->logicalDevice, &imageViewInfo, nullptr, &imageView) != VK_SUCCESS) {
+                throw std::runtime_error("Couldn't make an image view for the swapchain images");
+            }
+
+            aApp->swapchainImageViews.emplace_back(imageView);
+        }
+    
+    }
 }

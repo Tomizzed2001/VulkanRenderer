@@ -35,6 +35,8 @@ namespace app
 		VkSwapchainKHR swapchain;
 		VkFormat swapchainFormat;
 		VkExtent2D swapchainExtent;
+		std::vector<VkImage> swapchainImages;
+		std::vector<VkImageView> swapchainImageViews;
 
         // Debug Related
 		VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;

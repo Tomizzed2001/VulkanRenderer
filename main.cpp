@@ -36,6 +36,8 @@ namespace {
     /// <param name="app">The context of the application</param>
     /// <returns>Descriptor set layout</returns>
     VkDescriptorSetLayout createDescriptorSetLayout(app::AppContext& app);
+
+    VkPipelineLayout createPipelineLayout(app::AppContext& app, std::vector<VkDescriptorSetLayout> descriptorSetLayouts);
 }
 
 int main() {
@@ -52,12 +54,23 @@ int main() {
         // Create the descriptor set layout
         VkDescriptorSetLayout descriptorSetLayout = createDescriptorSetLayout(application);
 
+        // Create a vector of the descripor sets to use
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+        descriptorSetLayouts.emplace_back(descriptorSetLayout);
+
+        // Create a pipeline layout
+        VkPipelineLayout pipelineLayout = createPipelineLayout(application, descriptorSetLayouts);
+
+
+
+
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
             glfwPollEvents();
         }
 
         // Clean up and close the application
+        vkDestroyPipelineLayout(application.logicalDevice, pipelineLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, descriptorSetLayout, nullptr);
         vkDestroyRenderPass(application.logicalDevice, renderPass, nullptr);
         application.cleanup();
@@ -196,4 +209,22 @@ namespace {
         return descriptorSetLayout;
 
     }
+
+    VkPipelineLayout createPipelineLayout(app::AppContext& app, 
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts) {
+
+        // Set the info for the pipeline layout
+        VkPipelineLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutInfo.setLayoutCount = descriptorSetLayouts.size();
+        layoutInfo.pSetLayouts = descriptorSetLayouts.data();
+
+        VkPipelineLayout pipelineLayout;
+        if (vkCreatePipelineLayout(app.logicalDevice, &layoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create pipeline layout.");
+        }
+
+        return pipelineLayout;
+    }
+
 }

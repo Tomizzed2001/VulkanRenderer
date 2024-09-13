@@ -33,6 +33,8 @@
 
 # Visual Studio
 *.vcxproj*
+.vs/
+*.sln
 
 # Folders
 x64/

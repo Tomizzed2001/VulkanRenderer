@@ -61,8 +61,7 @@ int main() {
         // Create a pipeline layout
         VkPipelineLayout pipelineLayout = createPipelineLayout(application, descriptorSetLayouts);
 
-
-
+        // Create the pipeline
 
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {

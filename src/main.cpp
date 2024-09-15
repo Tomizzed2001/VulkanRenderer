@@ -4,7 +4,9 @@
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
+#include <filesystem>
 #include <iostream>
+#include <fstream>
 #include <stdexcept>
 #include <cstdlib>
 #include <vector>
@@ -15,6 +17,12 @@
 #include "setup.hpp"
 
 namespace {
+
+    namespace paths {
+        char const* vertexShaderPath = "Shaders/vert.spv";
+        char const* fragmentShaderPath = "Shaders/frag.spv";
+    }
+
     /// <summary>
     /// Creates a memory allocator using the vma library for Vulkan
     /// memory allocation.
@@ -37,7 +45,35 @@ namespace {
     /// <returns>Descriptor set layout</returns>
     VkDescriptorSetLayout createDescriptorSetLayout(app::AppContext& app);
 
+    /// <summary>
+    /// Creates a pipeline layout prior to making a pipeline
+    /// </summary>
+    /// <param name="app">The context of the application</param>
+    /// <param name="descriptorSetLayouts">The set of desriptors to apply to the pipeline</param>
+    /// <returns>Pipeline Layout</returns>
     VkPipelineLayout createPipelineLayout(app::AppContext& app, std::vector<VkDescriptorSetLayout> descriptorSetLayouts);
+
+    /// <summary>
+    /// Reads in and creates a shader module given the path to a shader
+    /// </summary>
+    /// <param name="app">The context of the application</param>
+    /// <param name="shaderPath">File path to a compiled spir-v shader</param>
+    /// <returns>Shader module</returns>
+    VkShaderModule createShaderModule(app::AppContext& app, char const* shaderPath);
+
+    /// <summary>
+    /// Creates a graphics pipeline to set how the rendering should be done
+    /// </summary>
+    /// <param name="app"> The application context </param>
+    /// <param name="pipeLayout">A pipeline layout</param>
+    /// <param name="renderPass">The render pass to apply the pipeline to</param>
+    /// <param name="vertexShader">The vertex shader to use</param>
+    /// <param name="fragmentShader">The fragment shader to use</param>
+    /// <returns></returns>
+    VkPipeline createPipeline(app::AppContext& app, VkPipelineLayout pipeLayout, 
+        VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader);
+
+
 }
 
 int main() {
@@ -61,7 +97,12 @@ int main() {
         // Create a pipeline layout
         VkPipelineLayout pipelineLayout = createPipelineLayout(application, descriptorSetLayouts);
 
+        // Create the shaders
+        VkShaderModule vertexShader = createShaderModule(application, paths::vertexShaderPath);
+        VkShaderModule fragmentShader = createShaderModule(application, paths::fragmentShaderPath);
+
         // Create the pipeline
+        VkPipeline pipeline = createPipeline(application, pipelineLayout, renderPass, vertexShader, fragmentShader);
 
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
@@ -69,6 +110,9 @@ int main() {
         }
 
         // Clean up and close the application
+        vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
+        vkDestroyShaderModule(application.logicalDevice, vertexShader, nullptr);
+        vkDestroyShaderModule(application.logicalDevice, fragmentShader, nullptr);
         vkDestroyPipelineLayout(application.logicalDevice, pipelineLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, descriptorSetLayout, nullptr);
         vkDestroyRenderPass(application.logicalDevice, renderPass, nullptr);
@@ -225,5 +269,174 @@ namespace {
 
         return pipelineLayout;
     }
+
+    VkShaderModule createShaderModule(app::AppContext& app, char const* shaderPath) {
+
+        // Read in the shader
+        std::ifstream file(shaderPath, std::ios::ate | std::ios::binary);
+
+        if (!file.is_open()) {
+            throw std::runtime_error("Could not open file: " + std::string(shaderPath));
+        }
+
+        size_t fileSize = (size_t)file.tellg();
+        std::vector<char> buffer(fileSize);
+
+        file.seekg(0);
+        file.read(buffer.data(), fileSize);
+
+        file.close();
+
+        // Get the info for the shader module
+        VkShaderModuleCreateInfo shaderInfo{};
+        shaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        shaderInfo.codeSize = buffer.size();
+        shaderInfo.pCode = reinterpret_cast<const uint32_t*>(buffer.data());
+        
+        // Create the shader module
+        VkShaderModule shaderModule;
+        if (vkCreateShaderModule(app.logicalDevice, &shaderInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create shader module");
+        }
+
+        return shaderModule;
+
+    }
+
+    VkPipeline createPipeline(app::AppContext& app, VkPipelineLayout pipeLayout,
+        VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader){
+
+        // Detail the shader stages of the pipeline
+        VkPipelineShaderStageCreateInfo shaderStages[2]{};
+        shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        shaderStages[0].module = vertexShader;
+        shaderStages[0].pName = "main";
+        shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        shaderStages[1].module = fragmentShader;
+        shaderStages[1].pName = "main";
+
+        // Inputs into the vertex shader
+        VkVertexInputBindingDescription vertexInputs[2]{};
+        //Positions 3 floats
+        vertexInputs[0].binding = 0;
+        vertexInputs[0].stride = sizeof(float) * 3;
+        vertexInputs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        //Textures 2 floats
+        vertexInputs[1].binding = 1;
+        vertexInputs[1].stride = sizeof(float) * 2;
+        vertexInputs[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        // Attributes of the above inputs
+        VkVertexInputAttributeDescription vertexAttributes[2]{};
+        // Positions
+        vertexAttributes[0].binding = 0;
+        vertexAttributes[0].location = 0;
+        vertexAttributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+        vertexAttributes[0].offset = 0;
+        // Textures
+        vertexAttributes[1].binding = 1;
+        vertexAttributes[1].location = 1;
+        vertexAttributes[1].format = VK_FORMAT_R32G32_SFLOAT;
+        vertexAttributes[1].offset = 0;
+
+        // Vertex shader info using the above descriptions
+        VkPipelineVertexInputStateCreateInfo vertexInfo{};
+        vertexInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInfo.vertexBindingDescriptionCount = 2;
+        vertexInfo.pVertexBindingDescriptions = vertexInputs;
+        vertexInfo.vertexAttributeDescriptionCount = 2;
+        vertexInfo.pVertexAttributeDescriptions = vertexAttributes;
+
+        // Details about the topology of the input vertices
+        VkPipelineInputAssemblyStateCreateInfo assemblyInfo{};
+        assemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        assemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        assemblyInfo.primitiveRestartEnable = VK_FALSE;
+
+        // Set the viewport to have to be the full screen
+        VkViewport viewport{};
+        viewport.x = 0.f;
+        viewport.y = 0.f;
+        viewport.width = float(app.swapchainExtent.width);
+        viewport.height = float(app.swapchainExtent.height);
+        viewport.minDepth = 0.f;
+        viewport.maxDepth = 1.f;
+
+        VkRect2D scissor{};
+        scissor.offset = VkOffset2D{ 0, 0 };
+        scissor.extent = VkExtent2D{ app.swapchainExtent.width, app.swapchainExtent.height };
+
+        // Assign the information about the viewport
+        VkPipelineViewportStateCreateInfo viewportInfo{};
+        viewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportInfo.viewportCount = 1;
+        viewportInfo.pViewports = &viewport;
+        viewportInfo.scissorCount = 1;
+        viewportInfo.pScissors = &scissor;
+
+        // Detail the rasterisation settings
+        VkPipelineRasterizationStateCreateInfo rasterizationInfo{};
+        rasterizationInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizationInfo.depthClampEnable = VK_FALSE;
+        rasterizationInfo.rasterizerDiscardEnable = VK_FALSE;
+        rasterizationInfo.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizationInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizationInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        rasterizationInfo.depthBiasEnable = VK_FALSE;
+        rasterizationInfo.lineWidth = 1.f;
+
+        // Multisampling rules
+        VkPipelineMultisampleStateCreateInfo samplingInfo{};
+        samplingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        samplingInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        // Colour attatchment blend state
+        VkPipelineColorBlendAttachmentState colourBlendStates[1]{};
+        colourBlendStates[0].blendEnable = VK_FALSE;
+        colourBlendStates[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+        // Info on the colour blends
+        VkPipelineColorBlendStateCreateInfo colourBlendInfo{};
+        colourBlendInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colourBlendInfo.logicOpEnable = VK_FALSE;
+        colourBlendInfo.attachmentCount = 1;
+        colourBlendInfo.pAttachments = colourBlendStates;
+
+        // Info on the depth attatchment
+        VkPipelineDepthStencilStateCreateInfo depthInfo{};
+        depthInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthInfo.depthTestEnable = VK_TRUE;
+        depthInfo.depthWriteEnable = VK_TRUE;
+        depthInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        depthInfo.minDepthBounds = 0.f;
+        depthInfo.maxDepthBounds = 1.f;
+
+        // Set the info about the entire pipeline using the above details set
+        VkGraphicsPipelineCreateInfo pipeInfo{};
+        pipeInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipeInfo.stageCount = 2;
+        pipeInfo.pStages = shaderStages;
+        pipeInfo.pVertexInputState = &vertexInfo;
+        pipeInfo.pInputAssemblyState = &assemblyInfo;
+        pipeInfo.pViewportState = &viewportInfo;
+        pipeInfo.pRasterizationState = &rasterizationInfo;
+        pipeInfo.pMultisampleState = &samplingInfo;
+        pipeInfo.pDepthStencilState = &depthInfo; // depth buffers
+        pipeInfo.pColorBlendState = &colourBlendInfo;
+        pipeInfo.layout = pipeLayout;
+        pipeInfo.renderPass = renderPass;
+        pipeInfo.subpass = 0;
+
+        VkPipeline pipeline;
+        if (vkCreateGraphicsPipelines(app.logicalDevice, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &pipeline) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create graphics pipeline.");
+        }
+
+        return VK_NULL_HANDLE;
+    }
+
+    
 
 }

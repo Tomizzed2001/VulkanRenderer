@@ -24,6 +24,13 @@ workspace "VulkanRenderer"
 
 project "Renderer"
     kind "ConsoleApp"
+    location "src"
     files {"src/**.cpp", "src/**.hpp"}
 
     dependson "glm" 
+
+project "Shaders"
+    kind "Utility"
+    location "src/Shaders"
+    files {"src/Shaders/**.vert", "src/Shaders/**.frag"}
+        

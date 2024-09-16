@@ -74,6 +74,14 @@ namespace {
     VkPipeline createPipeline(app::AppContext& app, VkPipelineLayout pipeLayout, 
         VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader);
 
+    /// <summary>
+    /// Creates a frame buffer to store the output of a render pass
+    /// </summary>
+    /// <param name="app">The application context</param>
+    /// <param name="renderPass">The render pass that the framebuffer will be used with</param>
+    /// <param name="buffers">The image view attatchements of the framebuffer</param>
+    /// <returns></returns>
+    VkFramebuffer createFramebuffer(app::AppContext& app, VkRenderPass renderPass, std::vector<VkImageView>& buffers);
 
 }
 
@@ -108,14 +116,21 @@ int main() {
         // Create a vkImage and vkImageView to store the colour of the framebuffer
         utility::ImageSet colourImageSet = utility::createBuffer(application, allocator);
 
+        // Create the framebuffers to store the results of the render pass
+        std::vector<VkImageView> buffers;
+        buffers.emplace_back(colourImageSet.imageView);
+        VkFramebuffer colourFramebuffer = createFramebuffer(application, renderPass, buffers);
+
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
             glfwPollEvents();
         }
 
+        // Wait for the GPU to have finished all processes before cleanup
         vkDeviceWaitIdle(application.logicalDevice);
 
         // Clean up and close the application
+        vkDestroyFramebuffer(application.logicalDevice, colourFramebuffer, nullptr);
         vmaDestroyImage(allocator, colourImageSet.image, colourImageSet.allocation);
         vkDestroyImageView(application.logicalDevice, colourImageSet.imageView, nullptr);
         vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
@@ -445,6 +460,26 @@ namespace {
         return pipeline;
     }
 
+    VkFramebuffer createFramebuffer(app::AppContext& app, VkRenderPass renderPass, std::vector<VkImageView>& buffers) {
+        // Provides the information to create the framebuffer with
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.flags = 0;
+        framebufferInfo.renderPass = renderPass;
+        framebufferInfo.attachmentCount = buffers.size();
+        framebufferInfo.pAttachments = buffers.data();
+        framebufferInfo.width = app.swapchainExtent.width;
+        framebufferInfo.height = app.swapchainExtent.height;
+        framebufferInfo.layers = 1;
+
+        // Create the framebuffer
+        VkFramebuffer framebuffer;
+        if (vkCreateFramebuffer(app.logicalDevice, &framebufferInfo, nullptr, &framebuffer) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create framebuffer.");
+        }
+    
+        return framebuffer;
+    }
     
 
 }

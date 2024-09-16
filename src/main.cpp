@@ -83,6 +83,29 @@ namespace {
     /// <returns></returns>
     VkFramebuffer createFramebuffer(app::AppContext& app, VkRenderPass renderPass, std::vector<VkImageView>& buffers);
 
+    /// <summary>
+    /// Creates a command pool with the given flags
+    /// </summary>
+    /// <param name="app">Application context</param>
+    /// <param name="flags">The flags to apply to the command pool</param>
+    /// <returns>A Vulkan command pool</returns>
+    VkCommandPool createCommandPool(app::AppContext& app, VkCommandPoolCreateFlags flags);
+
+    /// <summary>
+    /// Creates a command buffer given a command pool
+    /// </summary>
+    /// <param name="app">Application context</param>
+    /// <param name="commandPool">The command pool</param>
+    /// <returns>The command buffer</returns>
+    VkCommandBuffer createCommandBuffer(app::AppContext& app, VkCommandPool commandPool);
+
+    /// <summary>
+    /// Creates a fence given a set of flags
+    /// </summary>
+    /// <param name="app">The application context</param>
+    /// <param name="aFlags">Flag to apply to the fence. Is either signalled or unsignalled</param>
+    /// <returns>A fence</returns>
+    VkFence createFence(app::AppContext& app, VkFenceCreateFlags flag);
 }
 
 int main() {
@@ -132,8 +155,20 @@ int main() {
             swapchainFramebuffers.emplace_back(createFramebuffer(application, renderPass, swapchainAttatchments));
         }
 
-
+        // Create the command pool
+        VkCommandPool commandPool = createCommandPool(application, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
         
+        // Create the command buffers - one for each of the swapchain framebuffers
+        std::vector<VkCommandBuffer> commandBuffers;
+        for (size_t i = 0; i < swapchainFramebuffers.size(); i++) {
+            commandBuffers.emplace_back(createCommandBuffer(application, commandPool));
+        }
+
+        // Create fences for each of the swapchain framebuffers / command buffers
+        std::vector<VkFence> fences;
+        for (size_t i = 0; i < swapchainFramebuffers.size(); i++) {
+            fences.emplace_back(createFence(application, VK_FENCE_CREATE_SIGNALED_BIT));
+        }
 
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
@@ -147,6 +182,7 @@ int main() {
         for (VkFramebuffer fb : swapchainFramebuffers) {
             vkDestroyFramebuffer(application.logicalDevice, fb, nullptr);
         }
+        vkDestroyCommandPool(application.logicalDevice, commandPool, nullptr);
         vkDestroyFramebuffer(application.logicalDevice, colourFramebuffer, nullptr);
         vmaDestroyImage(allocator, colourImageSet.image, colourImageSet.allocation);
         vkDestroyImageView(application.logicalDevice, colourImageSet.imageView, nullptr);
@@ -498,5 +534,52 @@ namespace {
         return framebuffer;
     }
     
+    VkCommandPool createCommandPool(app::AppContext& app, VkCommandPoolCreateFlags flags) {
+        // Set the required information for the command pool
+        VkCommandPoolCreateInfo commandPoolInfo{};
+        commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        commandPoolInfo.queueFamilyIndex = app.graphicsFamilyIndex;
+        commandPoolInfo.flags = flags;
+
+        // Create the command pool
+        VkCommandPool commandPool;
+        if (vkCreateCommandPool(app.logicalDevice, &commandPoolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create command pool.");
+        }
+
+        return commandPool;
+    }
+
+    VkCommandBuffer createCommandBuffer(app::AppContext& app, VkCommandPool commandPool) {
+        // Set the information required of the command buffer
+        VkCommandBufferAllocateInfo commandBufferInfo{};
+        commandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandBufferInfo.commandPool = commandPool;
+        commandBufferInfo.commandBufferCount = 1;
+        commandBufferInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+        // Create / allocate the command buffer
+        VkCommandBuffer commandBuffer;
+        if (vkAllocateCommandBuffers(app.logicalDevice, &commandBufferInfo, &commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create command buffer.");
+        }
+
+        return commandBuffer;
+    }
+
+    VkFence createFence(app::AppContext& app, VkFenceCreateFlags flags) {
+        // Set the information required to create the fence
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = aFlags;
+
+        // Create the fence
+        VkFence fence;
+        if (vkCreateFence(app.logicalDevice, &fenceInfo, nullptr, &fence) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create fence.");
+        }
+
+        return fence;
+    }
 
 }

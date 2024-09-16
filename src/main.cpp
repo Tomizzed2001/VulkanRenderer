@@ -15,6 +15,7 @@
 #include <optional>
 
 #include "setup.hpp"
+#include "images.hpp"
 
 namespace {
 
@@ -104,12 +105,19 @@ int main() {
         // Create the pipeline
         VkPipeline pipeline = createPipeline(application, pipelineLayout, renderPass, vertexShader, fragmentShader);
 
+        // Create a vkImage and vkImageView to store the colour of the framebuffer
+        utility::ImageSet colourImageSet = utility::createBuffer(application, allocator);
+
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
             glfwPollEvents();
         }
 
+        vkDeviceWaitIdle(application.logicalDevice);
+
         // Clean up and close the application
+        vmaDestroyImage(allocator, colourImageSet.image, colourImageSet.allocation);
+        vkDestroyImageView(application.logicalDevice, colourImageSet.imageView, nullptr);
         vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
         vkDestroyShaderModule(application.logicalDevice, vertexShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, fragmentShader, nullptr);
@@ -434,7 +442,7 @@ namespace {
             throw std::runtime_error("Failed to create graphics pipeline.");
         }
 
-        return VK_NULL_HANDLE;
+        return pipeline;
     }
 
     

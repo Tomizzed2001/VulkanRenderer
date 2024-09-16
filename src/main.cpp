@@ -121,6 +121,20 @@ int main() {
         buffers.emplace_back(colourImageSet.imageView);
         VkFramebuffer colourFramebuffer = createFramebuffer(application, renderPass, buffers);
 
+        // Create the swapchain framebuffers (one for each of the image views)
+        std::vector<VkFramebuffer> swapchainFramebuffers;
+        for (size_t i = 0; i < application.swapchainImageViews.size(); i++) {
+            // Get the attatchments
+            std::vector<VkImageView> swapchainAttatchments;
+            swapchainAttatchments.emplace_back(application.swapchainImageViews[i]);
+            
+            // Create the framebuffer
+            swapchainFramebuffers.emplace_back(createFramebuffer(application, renderPass, swapchainAttatchments));
+        }
+
+
+        
+
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
             glfwPollEvents();
@@ -130,6 +144,9 @@ int main() {
         vkDeviceWaitIdle(application.logicalDevice);
 
         // Clean up and close the application
+        for (VkFramebuffer fb : swapchainFramebuffers) {
+            vkDestroyFramebuffer(application.logicalDevice, fb, nullptr);
+        }
         vkDestroyFramebuffer(application.logicalDevice, colourFramebuffer, nullptr);
         vmaDestroyImage(allocator, colourImageSet.image, colourImageSet.allocation);
         vkDestroyImageView(application.logicalDevice, colourImageSet.imageView, nullptr);

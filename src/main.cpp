@@ -103,9 +103,19 @@ namespace {
     /// Creates a fence given a set of flags
     /// </summary>
     /// <param name="app">The application context</param>
-    /// <param name="aFlags">Flag to apply to the fence. Is either signalled or unsignalled</param>
+    /// <param name="aFlags">Flag to apply to the fence. Is either signalled or unsignalled by default</param>
     /// <returns>A fence</returns>
-    VkFence createFence(app::AppContext& app, VkFenceCreateFlags flag);
+    VkFence createFence(app::AppContext& app, VkFenceCreateFlags flag = 0);
+
+    /// <summary>
+    /// Creates a semaphore that can be used to wait for completed executions
+    /// </summary>
+    /// <param name="app">The application context</param>
+    /// <param name="flag">Flag to apply to the semaphore. Is is unsignalled by default.</param>
+    /// <returns>Vulkan semaphore</returns>
+    VkSemaphore createSemaphore(app::AppContext& app, VkSemaphoreCreateFlags flag);
+
+
 }
 
 int main() {
@@ -170,6 +180,10 @@ int main() {
             fences.emplace_back(createFence(application, VK_FENCE_CREATE_SIGNALED_BIT));
         }
 
+        // Create semaphores
+        VkSemaphore imageIsReady;
+        VkSemaphore renderHasFinished;
+
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
             glfwPollEvents();
@@ -179,10 +193,11 @@ int main() {
         vkDeviceWaitIdle(application.logicalDevice);
 
         // Clean up and close the application
-        for (VkFramebuffer fb : swapchainFramebuffers) {
-            vkDestroyFramebuffer(application.logicalDevice, fb, nullptr);
-        }
         vkDestroyCommandPool(application.logicalDevice, commandPool, nullptr);
+        for (size_t i = 0; i < swapchainFramebuffers.size(); i++) {
+            vkDestroyFramebuffer(application.logicalDevice, swapchainFramebuffers[i], nullptr);
+            vkDestroyFence(application.logicalDevice, fences[i], nullptr);
+        }
         vkDestroyFramebuffer(application.logicalDevice, colourFramebuffer, nullptr);
         vmaDestroyImage(allocator, colourImageSet.image, colourImageSet.allocation);
         vkDestroyImageView(application.logicalDevice, colourImageSet.imageView, nullptr);
@@ -567,11 +582,11 @@ namespace {
         return commandBuffer;
     }
 
-    VkFence createFence(app::AppContext& app, VkFenceCreateFlags flags) {
+    VkFence createFence(app::AppContext& app, VkFenceCreateFlags flag) {
         // Set the information required to create the fence
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = aFlags;
+        fenceInfo.flags = flag;
 
         // Create the fence
         VkFence fence;
@@ -581,5 +596,22 @@ namespace {
 
         return fence;
     }
+
+    VkSemaphore createSemaphore(app::AppContext& app, VkSemaphoreCreateFlags flag) {
+        // Set the information required to create the semaphore
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        semaphoreInfo.flags = flag;
+
+        // Create the semaphore
+        VkSemaphore semaphore;
+        if (vkCreateSemaphore(app.logicalDevice, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create semaphore.");
+        }
+
+        return semaphore;
+    }
+
+
 
 }

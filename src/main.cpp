@@ -44,7 +44,7 @@ namespace {
     /// </summary>
     /// <param name="app">The context of the application</param>
     /// <returns>Descriptor set layout</returns>
-    VkDescriptorSetLayout createDescriptorSetLayout(app::AppContext& app);
+    VkDescriptorSetLayout createWorldDescriptorSetLayout(app::AppContext& app);
 
     /// <summary>
     /// Creates a pipeline layout prior to making a pipeline
@@ -129,12 +129,13 @@ int main() {
         // Create the renderpass
         VkRenderPass renderPass = createRenderPass(application);
 
-        // Create the descriptor set layout
-        VkDescriptorSetLayout descriptorSetLayout = createDescriptorSetLayout(application);
+        // Create the descriptor set layouts
+        // World descriptor set layout contains the world view matrices
+        VkDescriptorSetLayout worldDescriptorSetLayout = createWorldDescriptorSetLayout(application);
 
-        // Create a vector of the descripor sets to use
+        // Create a vector of the descriptor sets to use
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
-        descriptorSetLayouts.emplace_back(descriptorSetLayout);
+        descriptorSetLayouts.emplace_back(worldDescriptorSetLayout);
 
         // Create a pipeline layout
         VkPipelineLayout pipelineLayout = createPipelineLayout(application, descriptorSetLayouts);
@@ -147,7 +148,7 @@ int main() {
         VkPipeline pipeline = createPipeline(application, pipelineLayout, renderPass, vertexShader, fragmentShader);
 
         // Create a vkImage and vkImageView to store the colour of the framebuffer
-        utility::ImageSet colourImageSet = utility::createBuffer(application, allocator);
+        utility::ImageSet colourImageSet = utility::createImageSet(application, allocator);
 
         // Create the framebuffers to store the results of the render pass
         std::vector<VkImageView> buffers;
@@ -181,8 +182,11 @@ int main() {
         }
 
         // Create semaphores
-        VkSemaphore imageIsReady;
-        VkSemaphore renderHasFinished;
+        VkSemaphore imageIsReady = createSemaphore(application, 0);
+        VkSemaphore renderHasFinished = createSemaphore(application, 0);
+
+        // Load in the model
+
 
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
@@ -205,7 +209,7 @@ int main() {
         vkDestroyShaderModule(application.logicalDevice, vertexShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, fragmentShader, nullptr);
         vkDestroyPipelineLayout(application.logicalDevice, pipelineLayout, nullptr);
-        vkDestroyDescriptorSetLayout(application.logicalDevice, descriptorSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(application.logicalDevice, worldDescriptorSetLayout, nullptr);
         vkDestroyRenderPass(application.logicalDevice, renderPass, nullptr);
         application.cleanup();
 
@@ -318,7 +322,7 @@ namespace {
         return renderPass;
     }
 
-    VkDescriptorSetLayout createDescriptorSetLayout(app::AppContext& app) {
+    VkDescriptorSetLayout createWorldDescriptorSetLayout(app::AppContext& app) {
         // Set the bindings for the descriptor
         // These are accessed in the shader as binding = n
         // All data passed into the shaders must have a binding

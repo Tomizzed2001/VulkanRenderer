@@ -24,6 +24,6 @@ namespace utility {
 	/// <param name="app">Context of the application</param>
 	/// <param name="allocator">Memory allocator</param>
 	/// <returns>Class containing image, image view and allocation</returns>
-	ImageSet createBuffer(app::AppContext& app, VmaAllocator allocator);
+	ImageSet createImageSet(app::AppContext& app, VmaAllocator allocator);
 
 }

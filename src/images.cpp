@@ -1,7 +1,7 @@
 #include "images.hpp"
 
 namespace utility {
-	ImageSet createBuffer(app::AppContext& app, VmaAllocator allocator) {
+	ImageSet createImageSet(app::AppContext& app, VmaAllocator allocator) {
 		// Create the image and image view
 		ImageSet imageSet;
 

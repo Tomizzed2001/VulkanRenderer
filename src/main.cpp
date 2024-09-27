@@ -21,6 +21,12 @@
 
 namespace {
 
+    struct WorldView {
+        glm::mat4 cameraMatrix;
+        glm::mat4 projectionMatrix;
+        glm::mat4 projectionCameraMatrix;
+    };
+
     namespace paths {
         char const* vertexShaderPath = "Shaders/vert.spv";
         char const* fragmentShaderPath = "Shaders/frag.spv";
@@ -85,7 +91,12 @@ namespace {
     /// <returns></returns>
     VkFramebuffer createFramebuffer(app::AppContext& app, VkRenderPass renderPass, std::vector<VkImageView>& buffers);
 
-
+    /// <summary>
+    /// Creates a descriptor pool
+    /// </summary>
+    /// <param name="app">Application context</param>
+    /// <returns>A Vulkan descriptor pool</returns>
+    VkDescriptorPool createDescriptorPool(app::AppContext& app);
 }
 
 int main() {
@@ -177,7 +188,13 @@ int main() {
         // Load in the model
         model::Mesh mesh = model::createMesh(application, allocator, pos, col);
 
-        std::cout << "Here" << std::endl;
+        // Create descriptor pool
+        VkDescriptorPool descriptorPool = createDescriptorPool(application);
+
+        // Create the world uniform buffer
+        utility::BufferSet worldUniformBuffer = utility::createBuffer(allocator, sizeof(WorldView),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
@@ -188,6 +205,8 @@ int main() {
         vkDeviceWaitIdle(application.logicalDevice);
 
         // Clean up and close the application
+        worldUniformBuffer.~BufferSet();
+        vkDestroyDescriptorPool(application.logicalDevice, descriptorPool, nullptr);
         vkDestroySemaphore(application.logicalDevice, renderHasFinished, nullptr);
         vkDestroySemaphore(application.logicalDevice, imageIsReady, nullptr);
         vkDestroyCommandPool(application.logicalDevice, commandPool, nullptr);
@@ -547,7 +566,29 @@ namespace {
         return framebuffer;
     }
 
-    
+    VkDescriptorPool createDescriptorPool(app::AppContext& app) {
+        // How many different descriptors should be available
+        VkDescriptorPoolSize descriptorPoolSize[2];
+        // Uniform descriptors
+        descriptorPoolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorPoolSize[0].descriptorCount = 1024;
+        // Texture descriptors
+        descriptorPoolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorPoolSize[1].descriptorCount = 1024;
+
+        VkDescriptorPoolCreateInfo descriptorPoolInfo{};
+        descriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        descriptorPoolInfo.poolSizeCount = 2;
+        descriptorPoolInfo.pPoolSizes = descriptorPoolSize;
+        descriptorPoolInfo.maxSets = 2048;
+
+        VkDescriptorPool descriptorPool;
+        if(vkCreateDescriptorPool(app.logicalDevice, &descriptorPoolInfo, nullptr, &descriptorPool) != VK_SUCCESS){
+            throw std::runtime_error("Failed to create decriptor pool.");
+        }
+
+        return descriptorPool;
+    }
 
     
 

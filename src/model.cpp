@@ -1,15 +1,16 @@
 #include "model.hpp"
-#include "utility.hpp"
 
 namespace model {
-	Mesh createMesh(app::AppContext app, VmaAllocator allocator, 
-		std::vector<glm::vec3> vPositions,
-		std::vector<glm::vec3> vColours
+	Mesh createMesh(app::AppContext app, VmaAllocator& allocator, 
+		std::vector<glm::vec3>& vPositions,
+		std::vector<glm::vec3>& vColours
 	){
 		// Size of the input data in bytes (use long long since the number can be very large)
 		unsigned long long sizeOfPositions = vPositions.size() * sizeof(glm::vec3);
 		unsigned long long sizeOfColours = vColours.size() * sizeof(glm::vec3);
 
+		
+		
 		// Create the buffers on the GPU to hold the data
 		utility::BufferSet positionBuffer = utility::createBuffer(
 			allocator, 
@@ -23,7 +24,6 @@ namespace model {
 			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VMA_MEMORY_USAGE_AUTO
 		);
-
 		// Create the staging buffers
 		utility::BufferSet positionStaging = utility::createBuffer(
 			allocator,
@@ -38,12 +38,81 @@ namespace model {
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VMA_MEMORY_USAGE_AUTO,
 			VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+		);		
+
+		// Map the memory
+		void* positionMemory = nullptr;
+		vmaMapMemory(allocator, positionStaging.allocation, &positionMemory);
+		std::memcpy(positionMemory, vPositions.data(), sizeOfPositions);
+		vmaUnmapMemory(allocator, positionStaging.allocation);
+
+		void* colourMemory = nullptr;
+		vmaMapMemory(allocator, colourStaging.allocation, &colourMemory);
+		std::memcpy(colourMemory, vColours.data(), sizeOfColours);
+		vmaUnmapMemory(allocator, colourStaging.allocation);
+
+		// Create a command buffer to record the data into
+		VkCommandPool commandPool = utility::createCommandPool(app, 0);
+		VkCommandBuffer commandBuffer = utility::createCommandBuffer(app, commandPool);
+
+		// Begin recording into the command buffer
+		VkCommandBufferBeginInfo recordInfo{};
+		recordInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		if (vkBeginCommandBuffer(commandBuffer, &recordInfo) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to start command buffer recording.");
+		}
+
+		// Copy the data from staging to GPU
+		VkBufferCopy positionCopy{};
+		positionCopy.size = sizeOfPositions;
+		vkCmdCopyBuffer(commandBuffer, positionStaging.buffer, positionBuffer.buffer, 1, &positionCopy);
+		utility::createBarrier(positionBuffer.buffer, sizeOfPositions,
+			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+			commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
 		);
 
-		Mesh ret;
+		VkBufferCopy colourCopy{};
+		colourCopy.size = sizeOfColours;
+		vkCmdCopyBuffer(commandBuffer, colourStaging.buffer, colourBuffer.buffer, 1, &colourCopy);
+		utility::createBarrier(colourBuffer.buffer, sizeOfColours,
+			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+			commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
+		);
 
-		return ret;
+		// End the recording
+		if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to end command buffer recording.");
+		}
 
+		// Use a fence to ensure that transfers are complete before moving on
+		VkFence mappingComplete = utility::createFence(app);
+
+		// Submit the recorded commands for execution
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &commandBuffer;
+		if (vkQueueSubmit(app.graphicsQueue, 1, &submitInfo, mappingComplete)) {
+			throw std::runtime_error("Failed to submit recorded commands.");
+		}
+
+		// Wait for the fence before clean up
+		if (vkWaitForFences(app.logicalDevice, 1, &mappingComplete, VK_TRUE, std::numeric_limits<std::uint64_t>::max())) {
+			throw std::runtime_error("Fence failed to return as complete.");
+		}
+
+		// Clean up before returning
+		vkDestroyCommandPool(app.logicalDevice, commandPool, nullptr);
+		vkDestroyFence(app.logicalDevice, mappingComplete, nullptr);
+
+		Mesh outputMesh;
+		outputMesh.vertexPositions = std::move(positionBuffer);
+		outputMesh.vertexColours = std::move(colourBuffer);
+		outputMesh.numberOfVertices = uint32_t(vPositions.size());
+
+		return outputMesh;
 
 	}
 }

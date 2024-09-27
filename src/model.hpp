@@ -8,6 +8,7 @@
 
 #include <vk_mem_alloc.h>
 #include "setup.hpp"
+#include "utility.hpp"
 
 #include "glm.hpp"
 #include "vec3.hpp"
@@ -15,7 +16,9 @@
 namespace model {
 	struct Mesh {
 		// Vertices
-		VkBuffer vertexPositions;
+		utility::BufferSet vertexPositions;
+		utility::BufferSet vertexColours;
+
 		std::uint32_t numberOfVertices;
 	};
 
@@ -27,5 +30,5 @@ namespace model {
 	/// <param name="vPositions">Vertex positions</param>
 	/// <param name="vColours">Vertex colours</param>
 	/// <returns></returns>
-	Mesh createMesh(app::AppContext app, VmaAllocator allocator, std::vector<glm::vec3> vPositions, std::vector<glm::vec3> vColours);
+	Mesh createMesh(app::AppContext app, VmaAllocator& allocator, std::vector<glm::vec3>& vPositions, std::vector<glm::vec3>& vColours);
 }

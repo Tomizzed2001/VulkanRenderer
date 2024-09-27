@@ -16,6 +16,8 @@
 
 #include "setup.hpp"
 #include "images.hpp"
+#include "utility.hpp"
+#include "model.hpp"
 
 namespace {
 
@@ -83,38 +85,6 @@ namespace {
     /// <returns></returns>
     VkFramebuffer createFramebuffer(app::AppContext& app, VkRenderPass renderPass, std::vector<VkImageView>& buffers);
 
-    /// <summary>
-    /// Creates a command pool with the given flags
-    /// </summary>
-    /// <param name="app">Application context</param>
-    /// <param name="flags">The flags to apply to the command pool</param>
-    /// <returns>A Vulkan command pool</returns>
-    VkCommandPool createCommandPool(app::AppContext& app, VkCommandPoolCreateFlags flags);
-
-    /// <summary>
-    /// Creates a command buffer given a command pool
-    /// </summary>
-    /// <param name="app">Application context</param>
-    /// <param name="commandPool">The command pool</param>
-    /// <returns>The command buffer</returns>
-    VkCommandBuffer createCommandBuffer(app::AppContext& app, VkCommandPool commandPool);
-
-    /// <summary>
-    /// Creates a fence given a set of flags
-    /// </summary>
-    /// <param name="app">The application context</param>
-    /// <param name="aFlags">Flag to apply to the fence. Is either signalled or unsignalled by default</param>
-    /// <returns>A fence</returns>
-    VkFence createFence(app::AppContext& app, VkFenceCreateFlags flag = 0);
-
-    /// <summary>
-    /// Creates a semaphore that can be used to wait for completed executions
-    /// </summary>
-    /// <param name="app">The application context</param>
-    /// <param name="flag">Flag to apply to the semaphore. Is is unsignalled by default.</param>
-    /// <returns>Vulkan semaphore</returns>
-    VkSemaphore createSemaphore(app::AppContext& app, VkSemaphoreCreateFlags flag);
-
 
 }
 
@@ -167,26 +137,47 @@ int main() {
         }
 
         // Create the command pool
-        VkCommandPool commandPool = createCommandPool(application, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+        VkCommandPool commandPool = utility::createCommandPool(application, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
         
         // Create the command buffers - one for each of the swapchain framebuffers
         std::vector<VkCommandBuffer> commandBuffers;
         for (size_t i = 0; i < swapchainFramebuffers.size(); i++) {
-            commandBuffers.emplace_back(createCommandBuffer(application, commandPool));
+            commandBuffers.emplace_back(utility::createCommandBuffer(application, commandPool));
         }
 
         // Create fences for each of the swapchain framebuffers / command buffers
         std::vector<VkFence> fences;
         for (size_t i = 0; i < swapchainFramebuffers.size(); i++) {
-            fences.emplace_back(createFence(application, VK_FENCE_CREATE_SIGNALED_BIT));
+            fences.emplace_back(utility::createFence(application, VK_FENCE_CREATE_SIGNALED_BIT));
         }
 
         // Create semaphores
-        VkSemaphore imageIsReady = createSemaphore(application, 0);
-        VkSemaphore renderHasFinished = createSemaphore(application, 0);
+        VkSemaphore imageIsReady = utility::createSemaphore(application, 0);
+        VkSemaphore renderHasFinished = utility::createSemaphore(application, 0);
+
+        // Temporarily define model here
+        std::vector<glm::vec3> pos;
+        pos.emplace_back(glm::vec3(-1, 0, -6));
+        pos.emplace_back(glm::vec3(-1, 0, 6));
+        pos.emplace_back(glm::vec3(1, 0, 6));
+
+        pos.emplace_back(glm::vec3(-1, 0, -6));
+        pos.emplace_back(glm::vec3(1, 0, 6));
+        pos.emplace_back(glm::vec3(1, 0, -6));
+
+        std::vector<glm::vec3> col;
+        col.emplace_back(glm::vec3(0.4, 0.4, 1));
+        col.emplace_back(glm::vec3(0.4, 1, 0.4));
+        col.emplace_back(glm::vec3(1, 0.4, 0.4));
+
+        col.emplace_back(glm::vec3(0.4, 0.4, 1));
+        col.emplace_back(glm::vec3(1, 0.4, 0.4));
+        col.emplace_back(glm::vec3(1, 0.4, 0));
 
         // Load in the model
+        model::Mesh mesh = model::createMesh(application, allocator, pos, col);
 
+        std::cout << "Here" << std::endl;
 
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
@@ -197,6 +188,8 @@ int main() {
         vkDeviceWaitIdle(application.logicalDevice);
 
         // Clean up and close the application
+        vkDestroySemaphore(application.logicalDevice, renderHasFinished, nullptr);
+        vkDestroySemaphore(application.logicalDevice, imageIsReady, nullptr);
         vkDestroyCommandPool(application.logicalDevice, commandPool, nullptr);
         for (size_t i = 0; i < swapchainFramebuffers.size(); i++) {
             vkDestroyFramebuffer(application.logicalDevice, swapchainFramebuffers[i], nullptr);
@@ -211,6 +204,7 @@ int main() {
         vkDestroyPipelineLayout(application.logicalDevice, pipelineLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, worldDescriptorSetLayout, nullptr);
         vkDestroyRenderPass(application.logicalDevice, renderPass, nullptr);
+        vmaDestroyAllocator(allocator);
         application.cleanup();
 
         return EXIT_SUCCESS;
@@ -552,69 +546,10 @@ namespace {
     
         return framebuffer;
     }
+
     
-    VkCommandPool createCommandPool(app::AppContext& app, VkCommandPoolCreateFlags flags) {
-        // Set the required information for the command pool
-        VkCommandPoolCreateInfo commandPoolInfo{};
-        commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        commandPoolInfo.queueFamilyIndex = app.graphicsFamilyIndex;
-        commandPoolInfo.flags = flags;
 
-        // Create the command pool
-        VkCommandPool commandPool;
-        if (vkCreateCommandPool(app.logicalDevice, &commandPoolInfo, nullptr, &commandPool) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create command pool.");
-        }
-
-        return commandPool;
-    }
-
-    VkCommandBuffer createCommandBuffer(app::AppContext& app, VkCommandPool commandPool) {
-        // Set the information required of the command buffer
-        VkCommandBufferAllocateInfo commandBufferInfo{};
-        commandBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        commandBufferInfo.commandPool = commandPool;
-        commandBufferInfo.commandBufferCount = 1;
-        commandBufferInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-
-        // Create / allocate the command buffer
-        VkCommandBuffer commandBuffer;
-        if (vkAllocateCommandBuffers(app.logicalDevice, &commandBufferInfo, &commandBuffer) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create command buffer.");
-        }
-
-        return commandBuffer;
-    }
-
-    VkFence createFence(app::AppContext& app, VkFenceCreateFlags flag) {
-        // Set the information required to create the fence
-        VkFenceCreateInfo fenceInfo{};
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = flag;
-
-        // Create the fence
-        VkFence fence;
-        if (vkCreateFence(app.logicalDevice, &fenceInfo, nullptr, &fence) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create fence.");
-        }
-
-        return fence;
-    }
-
-    VkSemaphore createSemaphore(app::AppContext& app, VkSemaphoreCreateFlags flag) {
-        // Set the information required to create the semaphore
-        VkSemaphoreCreateInfo semaphoreInfo{};
-        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        semaphoreInfo.flags = flag;
-
-        // Create the semaphore
-        VkSemaphore semaphore;
-        if (vkCreateSemaphore(app.logicalDevice, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create semaphore.");
-        }
-
-        return semaphore;
-    }
+    
 
 
 

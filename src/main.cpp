@@ -97,6 +97,16 @@ namespace {
     /// <param name="app">Application context</param>
     /// <returns>A Vulkan descriptor pool</returns>
     VkDescriptorPool createDescriptorPool(app::AppContext& app);
+
+    /// <summary>
+    /// Creates a descriptor set
+    /// </summary>
+    /// <param name="app">Application context</param>
+    /// <param name="pool">Descriptor pool</param>
+    /// <param name="layout">Descriptor set layout</param>
+    /// <returns>Descriptor set (uninitialized)</returns>
+    VkDescriptorSet createDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout);
+
 }
 
 int main() {
@@ -195,6 +205,21 @@ int main() {
         utility::BufferSet worldUniformBuffer = utility::createBuffer(allocator, sizeof(WorldView),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+
+        // Create the world descriptor set and fill with the information
+        VkDescriptorSet worldDescriptorSet = createDescriptorSet(application, descriptorPool, worldDescriptorSetLayout);
+        VkDescriptorBufferInfo worldBufferInfo{};
+        worldBufferInfo.buffer = worldUniformBuffer.buffer;
+        worldBufferInfo.range = VK_WHOLE_SIZE;
+            
+        VkWriteDescriptorSet descriptor{};
+        descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor.dstSet = worldDescriptorSet;
+        descriptor.dstBinding = 0;      // Binding in the shader
+        descriptor.descriptorCount = 1;
+        descriptor.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptor.pBufferInfo = &worldBufferInfo;
+        vkUpdateDescriptorSets(application.logicalDevice, 1, &descriptor, 0, nullptr);
 
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
@@ -590,7 +615,20 @@ namespace {
         return descriptorPool;
     }
 
-    
+    VkDescriptorSet createDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout) {
+        VkDescriptorSetAllocateInfo descriptorSetInfo{};
+        descriptorSetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptorSetInfo.descriptorPool = pool;
+        descriptorSetInfo.descriptorSetCount = 1;
+        descriptorSetInfo.pSetLayouts = &layout;
+
+        VkDescriptorSet descriptorSet;
+        if (vkAllocateDescriptorSets(app.logicalDevice, &descriptorSetInfo, &descriptorSet) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor set.");
+        }
+
+        return descriptorSet;
+    }
 
 
 

@@ -141,10 +141,8 @@ namespace {
         VkRect2D renderArea,
         VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
-        VkBuffer positionBuffer,                                    // Per vertex data
-        VkBuffer colourBuffer,                                      // Per vertex data
-        std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
-        std::uint32_t numVertices                                   // Vertex data
+        model::Mesh& mesh,                                          // Mesh data
+        std::vector<VkDeviceSize>& vertexOffsets                    // Per vertex data
     );
     
     /// <summary>
@@ -245,6 +243,12 @@ int main() {
         pos.emplace_back(glm::vec3(2, 0, 2));
         pos.emplace_back(glm::vec3(2, 0, -2));
 
+        std::vector<glm::vec3> posIndexed;
+        posIndexed.emplace_back(glm::vec3(-2, 0, -2));
+        posIndexed.emplace_back(glm::vec3(-2, 0, 2));
+        posIndexed.emplace_back(glm::vec3(2, 0, 2));
+        posIndexed.emplace_back(glm::vec3(2, 0, -2));
+
         std::vector<glm::vec3> col;
         col.emplace_back(glm::vec3(1, 0, 0));
         col.emplace_back(glm::vec3(0, 1, 0));
@@ -254,8 +258,16 @@ int main() {
         col.emplace_back(glm::vec3(0, 0, 1));
         col.emplace_back(glm::vec3(0, 1, 0));
 
+        std::vector<std::uint32_t> indices;
+        indices.emplace_back(0);
+        indices.emplace_back(1);
+        indices.emplace_back(2);
+        indices.emplace_back(0);
+        indices.emplace_back(2);
+        indices.emplace_back(3);
+
         // Load in the model
-        model::Mesh mesh = model::createMesh(application, allocator, pos, col);
+        model::Mesh mesh = model::createMesh(application, allocator, posIndexed, col, indices);
 
         // Create descriptor pool
         VkDescriptorPool descriptorPool = createDescriptorPool(application);
@@ -312,11 +324,6 @@ int main() {
             renderArea.extent = application.swapchainExtent;
             renderArea.offset = VkOffset2D{ 0,0 };
 
-            // Get the set of buffers
-            std::vector<VkBuffer> meshBuffers;
-            meshBuffers.emplace_back(mesh.vertexPositions.buffer);
-            meshBuffers.emplace_back(mesh.vertexColours.buffer);
-
             // Get the set of offsets
             std::vector<VkDeviceSize> meshOffsets = {0, 0};
 
@@ -331,10 +338,8 @@ int main() {
                 pipeline,
                 pipelineLayout,
                 worldDescriptorSet,
-                mesh.vertexPositions.buffer,
-                mesh.vertexColours.buffer,
-                meshOffsets,
-                mesh.numberOfVertices
+                mesh,
+                meshOffsets
             );
 
             // Submit commands
@@ -357,6 +362,7 @@ int main() {
         worldUniformBuffer.~BufferSet();
         mesh.vertexPositions.~BufferSet();
         mesh.vertexColours.~BufferSet();
+        mesh.indices.~BufferSet();
         vkDestroyDescriptorPool(application.logicalDevice, descriptorPool, nullptr);
         vkDestroySemaphore(application.logicalDevice, renderHasFinished, nullptr);
         vkDestroySemaphore(application.logicalDevice, imageIsReady, nullptr);
@@ -525,6 +531,8 @@ namespace {
         layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         layoutInfo.setLayoutCount = descriptorSetLayouts.size();
         layoutInfo.pSetLayouts = descriptorSetLayouts.data();
+        //layoutInfo.setLayoutCount = 0;
+        //layoutInfo.pSetLayouts = nullptr;
         layoutInfo.pushConstantRangeCount = 0;
         layoutInfo.pPushConstantRanges = nullptr;
 
@@ -777,12 +785,11 @@ namespace {
         VkCommandBuffer commandBuffer,                              // Command buffer
         VkBuffer worldUniformBuffer, WorldView worldUniform,        // World Uniform
         VkRenderPass renderPass, VkFramebuffer frameBuffer,         // Render pass
-        VkRect2D renderArea, 
+        VkRect2D renderArea,
         VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
-        VkBuffer positionBuffer, VkBuffer colourBuffer,             // Per vertex data
-        std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
-        std::uint32_t numVertices                                   // Vertex data
+        model::Mesh& mesh,                                          // Mesh data
+        std::vector<VkDeviceSize>& vertexOffsets                    // Per vertex data
     ) {
         // Set up and start the command buffer recording
         VkCommandBufferBeginInfo recordInfo{};
@@ -835,13 +842,16 @@ namespace {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &worldDescriptorSet, 0, nullptr);
 
         // Bind the per vertex buffers
-        VkBuffer buffers[2] = { positionBuffer, colourBuffer };
+        VkBuffer buffers[2] = { mesh.vertexPositions.buffer, mesh.vertexColours.buffer };
         VkDeviceSize offsets[2]{};
-
         vkCmdBindVertexBuffers(commandBuffer, 0, 2, buffers, offsets);
 
+        // Bind the index buffer
+        vkCmdBindIndexBuffer(commandBuffer, mesh.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+
         // Do the draw call
-        vkCmdDraw(commandBuffer, numVertices, 1, 0, 0);
+        //vkCmdDraw(commandBuffer, mesh.numberOfVertices, 1, 0, 0);
+        vkCmdDrawIndexed(commandBuffer, mesh.numberOfIndices, 1, 0, 0, 0);
 
         // End the renderpass
         vkCmdEndRenderPass(commandBuffer);

@@ -18,8 +18,10 @@ namespace model {
 		// Vertices
 		utility::BufferSet vertexPositions;
 		utility::BufferSet vertexColours;
+		utility::BufferSet indices;
 
 		std::uint32_t numberOfVertices;
+		std::uint32_t numberOfIndices;
 	};
 
 	/// <summary>
@@ -30,5 +32,9 @@ namespace model {
 	/// <param name="vPositions">Vertex positions</param>
 	/// <param name="vColours">Vertex colours</param>
 	/// <returns></returns>
-	Mesh createMesh(app::AppContext app, VmaAllocator& allocator, std::vector<glm::vec3>& vPositions, std::vector<glm::vec3>& vColours);
+	Mesh createMesh(app::AppContext app, VmaAllocator& allocator, 
+		std::vector<glm::vec3>& vPositions, 
+		std::vector<glm::vec3>& vColours,
+		std::vector<std::uint32_t>& indices
+	);
 }

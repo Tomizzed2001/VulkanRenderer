@@ -14,6 +14,11 @@
 #include <string>
 #include <optional>
 
+#include "glm.hpp"
+#include <gtx/transform.hpp>
+#include <gtc/matrix_transform.hpp>
+#include <gtx/string_cast.hpp>
+
 #include "setup.hpp"
 #include "images.hpp"
 #include "utility.hpp"
@@ -107,6 +112,60 @@ namespace {
     /// <returns>Descriptor set (uninitialized)</returns>
     VkDescriptorSet createDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout);
 
+    /// <summary>
+    /// Updates the world view matrices
+    /// </summary>
+    /// <param name="worldUniform">The uniform to be updated</param>
+    /// <param name="screenAspect">The aspect value of the swapchain</param>
+    void updateWorldUniforms(WorldView& worldUniform, float screenAspect);
+
+    /// <summary>
+    /// Records the rendering information and sets up the draw calls
+    /// </summary>
+    /// <param name="commandBuffer">The command buffer to record to</param>
+    /// <param name="worldUniformBuffer">The world view uniform buffer</param>
+    /// <param name="worldUniform">The world view struct</param>
+    /// <param name="renderPass">The render pass</param>
+    /// <param name="frameBuffer">The framebuffer to use</param>
+    /// <param name="renderArea">The render area of the frame buffer</param>
+    /// <param name="pipeline">Render pipeline</param>
+    /// <param name="pipelineLayout">Render pipeline layout</param>
+    /// <param name="worldDescriptorSet">Descriptor set describing the world view uniform</param>
+    /// <param name="vertexBuffers">The vertex buffer</param>
+    /// <param name="vertexOffsets">The vertex offsets</param>
+    /// <param name="numVertices">The number of vertices</param>
+    void recordCommands(
+        VkCommandBuffer commandBuffer,                              // Command buffer
+        VkBuffer worldUniformBuffer, WorldView worldUniform,        // World Uniform
+        VkRenderPass renderPass, VkFramebuffer frameBuffer,         // Render pass
+        VkRect2D renderArea,
+        VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
+        VkDescriptorSet worldDescriptorSet,                         // World descriptors
+        VkBuffer positionBuffer,                                    // Per vertex data
+        VkBuffer colourBuffer,                                      // Per vertex data
+        std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
+        std::uint32_t numVertices                                   // Vertex data
+    );
+    
+    /// <summary>
+    /// Submits a command buffer to the graphics queue
+    /// </summary>
+    /// <param name="app">Application context</param>
+    /// <param name="commandBuffer">Recorded Command buffer</param>
+    /// <param name="wait">Wait semaphore</param>
+    /// <param name="signal">Signal semaphore</param>
+    /// <param name="fence">Fence to wait for</param>
+    void submitCommands(app::AppContext app, VkCommandBuffer commandBuffer, VkSemaphore wait, 
+        VkSemaphore signal, VkFence fence);
+
+    /// <summary>
+    /// Presents the rendering to screen
+    /// </summary>
+    /// <param name="app">Application context</param>
+    /// <param name="finishedSemaphore">Signal semaphore from submission</param>
+    /// <param name="swapchainIndex">Swapchain image index</param>
+    void presentToScreen(app::AppContext app, VkSemaphore finishedSemaphore, std::uint32_t swapchainIndex);
+
 }
 
 int main() {
@@ -139,12 +198,12 @@ int main() {
         VkPipeline pipeline = createPipeline(application, pipelineLayout, renderPass, vertexShader, fragmentShader);
 
         // Create a vkImage and vkImageView to store the colour of the framebuffer
-        utility::ImageSet colourImageSet = utility::createImageSet(application, allocator);
+        //utility::ImageSet colourImageSet = utility::createImageSet(application, allocator);
 
         // Create the framebuffers to store the results of the render pass
-        std::vector<VkImageView> buffers;
-        buffers.emplace_back(colourImageSet.imageView);
-        VkFramebuffer colourFramebuffer = createFramebuffer(application, renderPass, buffers);
+        //std::vector<VkImageView> buffers;
+        //buffers.emplace_back(colourImageSet.imageView);
+        //VkFramebuffer colourFramebuffer = createFramebuffer(application, renderPass, buffers);
 
         // Create the swapchain framebuffers (one for each of the image views)
         std::vector<VkFramebuffer> swapchainFramebuffers;
@@ -178,22 +237,22 @@ int main() {
 
         // Temporarily define model here
         std::vector<glm::vec3> pos;
-        pos.emplace_back(glm::vec3(-1, 0, -6));
-        pos.emplace_back(glm::vec3(-1, 0, 6));
-        pos.emplace_back(glm::vec3(1, 0, 6));
+        pos.emplace_back(glm::vec3(-2, 0, -2));
+        pos.emplace_back(glm::vec3(-2, 0, 2));
+        pos.emplace_back(glm::vec3(2, 0, 2));
 
-        pos.emplace_back(glm::vec3(-1, 0, -6));
-        pos.emplace_back(glm::vec3(1, 0, 6));
-        pos.emplace_back(glm::vec3(1, 0, -6));
+        pos.emplace_back(glm::vec3(-2, 0, -2));
+        pos.emplace_back(glm::vec3(2, 0, 2));
+        pos.emplace_back(glm::vec3(2, 0, -2));
 
         std::vector<glm::vec3> col;
-        col.emplace_back(glm::vec3(0.4, 0.4, 1));
-        col.emplace_back(glm::vec3(0.4, 1, 0.4));
-        col.emplace_back(glm::vec3(1, 0.4, 0.4));
+        col.emplace_back(glm::vec3(1, 0, 0));
+        col.emplace_back(glm::vec3(0, 1, 0));
+        col.emplace_back(glm::vec3(0, 0, 1));
 
-        col.emplace_back(glm::vec3(0.4, 0.4, 1));
-        col.emplace_back(glm::vec3(1, 0.4, 0.4));
-        col.emplace_back(glm::vec3(1, 0.4, 0));
+        col.emplace_back(glm::vec3(1, 0, 0));
+        col.emplace_back(glm::vec3(0, 0, 1));
+        col.emplace_back(glm::vec3(0, 1, 0));
 
         // Load in the model
         model::Mesh mesh = model::createMesh(application, allocator, pos, col);
@@ -208,6 +267,7 @@ int main() {
 
         // Create the world descriptor set and fill with the information
         VkDescriptorSet worldDescriptorSet = createDescriptorSet(application, descriptorPool, worldDescriptorSetLayout);
+        
         VkDescriptorBufferInfo worldBufferInfo{};
         worldBufferInfo.buffer = worldUniformBuffer.buffer;
         worldBufferInfo.range = VK_WHOLE_SIZE;
@@ -224,6 +284,70 @@ int main() {
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
             glfwPollEvents();
+
+            // Get the next image in the swapchain to use
+            std::uint32_t nextImageIndex = 0;
+            auto const res = vkAcquireNextImageKHR(application.logicalDevice, application.swapchain,
+                std::numeric_limits<std::uint64_t>::max(), imageIsReady, VK_NULL_HANDLE, 
+                &nextImageIndex);
+
+            if (res != VK_SUCCESS) {
+                throw std::runtime_error("Failed to get next swapchain image");
+            }
+
+            // Wait for the command buffer
+            if (vkWaitForFences(application.logicalDevice, 1, &fences[nextImageIndex], VK_TRUE, std::numeric_limits<std::uint64_t>::max())) {
+                throw std::runtime_error("Fence buffer timed out.");
+            }
+            // Reset the fence for the next iteration
+            vkResetFences(application.logicalDevice, 1, &fences[nextImageIndex]);
+
+            // Update the world view uniform
+            WorldView worldViewUniform;
+            float screenAspect = float(application.swapchainExtent.width) / float(application.swapchainExtent.height);
+            updateWorldUniforms(worldViewUniform, screenAspect);
+
+            // Get the render area
+            VkRect2D renderArea;
+            renderArea.extent = application.swapchainExtent;
+            renderArea.offset = VkOffset2D{ 0,0 };
+
+            // Get the set of buffers
+            std::vector<VkBuffer> meshBuffers;
+            meshBuffers.emplace_back(mesh.vertexPositions.buffer);
+            meshBuffers.emplace_back(mesh.vertexColours.buffer);
+
+            // Get the set of offsets
+            std::vector<VkDeviceSize> meshOffsets = {0, 0};
+
+            // Record commands
+            recordCommands(
+                commandBuffers[nextImageIndex],
+                worldUniformBuffer.buffer,
+                worldViewUniform,
+                renderPass,
+                swapchainFramebuffers[nextImageIndex],
+                renderArea,
+                pipeline,
+                pipelineLayout,
+                worldDescriptorSet,
+                mesh.vertexPositions.buffer,
+                mesh.vertexColours.buffer,
+                meshOffsets,
+                mesh.numberOfVertices
+            );
+
+            // Submit commands
+            submitCommands(application, commandBuffers[nextImageIndex], imageIsReady, renderHasFinished, fences[nextImageIndex]);
+
+            // Wait for commands to be submitted
+            if (vkWaitForFences(application.logicalDevice, 1, &fences[nextImageIndex], VK_TRUE, std::numeric_limits<std::uint64_t>::max())) {
+                throw std::runtime_error("Fence buffer timed out.");
+            }
+
+            // Present the image
+            presentToScreen(application, renderHasFinished, nextImageIndex);
+
         }
 
         // Wait for the GPU to have finished all processes before cleanup
@@ -231,6 +355,8 @@ int main() {
 
         // Clean up and close the application
         worldUniformBuffer.~BufferSet();
+        mesh.vertexPositions.~BufferSet();
+        mesh.vertexColours.~BufferSet();
         vkDestroyDescriptorPool(application.logicalDevice, descriptorPool, nullptr);
         vkDestroySemaphore(application.logicalDevice, renderHasFinished, nullptr);
         vkDestroySemaphore(application.logicalDevice, imageIsReady, nullptr);
@@ -239,9 +365,9 @@ int main() {
             vkDestroyFramebuffer(application.logicalDevice, swapchainFramebuffers[i], nullptr);
             vkDestroyFence(application.logicalDevice, fences[i], nullptr);
         }
-        vkDestroyFramebuffer(application.logicalDevice, colourFramebuffer, nullptr);
-        vmaDestroyImage(allocator, colourImageSet.image, colourImageSet.allocation);
-        vkDestroyImageView(application.logicalDevice, colourImageSet.imageView, nullptr);
+        //vkDestroyFramebuffer(application.logicalDevice, colourFramebuffer, nullptr);
+        //vmaDestroyImage(allocator, colourImageSet.image, colourImageSet.allocation);
+        //vkDestroyImageView(application.logicalDevice, colourImageSet.imageView, nullptr);
         vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
         vkDestroyShaderModule(application.logicalDevice, vertexShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, fragmentShader, nullptr);
@@ -251,18 +377,19 @@ int main() {
         vmaDestroyAllocator(allocator);
         application.cleanup();
 
-        return EXIT_SUCCESS;
+        std::cout << "Cleaning" << std::endl;
+        return 0;
     }
     catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;
     }
 
-    return EXIT_SUCCESS;
+    return 1;
 }
 
 namespace {
-    
+
     VmaAllocator createMemoryAllocator(app::AppContext& app) {
         VkPhysicalDeviceProperties properties{};
         vkGetPhysicalDeviceProperties(app.physicalDevice, &properties);
@@ -290,7 +417,7 @@ namespace {
     VkRenderPass createRenderPass(app::AppContext& app) {
         // Define the attatchments of the render pass
         // The swapchain attatchment
-        VkAttachmentDescription attachments[2]{};
+        VkAttachmentDescription attachments[1]{};
         attachments[0].format = app.swapchainFormat;
         attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
         attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -298,12 +425,14 @@ namespace {
         attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         // The depth buffer attachment
+        /*
         attachments[1].format = VK_FORMAT_D32_SFLOAT;
         attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
         attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        */
 
         // Define the attatchment propeties for a subpass
         VkAttachmentReference colourAttachment{};
@@ -316,14 +445,14 @@ namespace {
         depthAttachment.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         // Provide a description of the subpass
-        VkSubpassDescription subpasses{};
-        subpasses.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpasses.colorAttachmentCount = 1;
-        subpasses.pColorAttachments = &colourAttachment;
-        subpasses.pDepthStencilAttachment = &depthAttachment;
+        VkSubpassDescription subpasses[1]{};
+        subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpasses[0].colorAttachmentCount = 1;
+        subpasses[0].pColorAttachments = &colourAttachment;
+        //subpasses.pDepthStencilAttachment = &depthAttachment;
 
         // Set the dependencies of each subpass
-        VkSubpassDependency subpassDependencies[2]{};
+        VkSubpassDependency subpassDependencies[1]{};
         // For the colour
         subpassDependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
         subpassDependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -333,6 +462,7 @@ namespace {
         subpassDependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         subpassDependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         // For the depth
+        /*
         subpassDependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
         subpassDependencies[1].srcSubpass = VK_SUBPASS_EXTERNAL;
         subpassDependencies[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -340,15 +470,16 @@ namespace {
         subpassDependencies[1].dstSubpass = 0;
         subpassDependencies[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
         subpassDependencies[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        */
 
         // Combine all the data to create the renderpass info
         VkRenderPassCreateInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassInfo.attachmentCount = 2;
+        renderPassInfo.attachmentCount = 1;
         renderPassInfo.pAttachments = attachments;
         renderPassInfo.subpassCount = 1;
-        renderPassInfo.pSubpasses = &subpasses;
-        renderPassInfo.dependencyCount = 2;
+        renderPassInfo.pSubpasses = subpasses;
+        renderPassInfo.dependencyCount = 1;
         renderPassInfo.pDependencies = subpassDependencies;
 
         // Create the renderpass
@@ -369,7 +500,7 @@ namespace {
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
         // Set the info of the descriptor
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
@@ -377,7 +508,7 @@ namespace {
         descriptorSetLayoutInfo.bindingCount = numberOfBindings;
         descriptorSetLayoutInfo.pBindings = bindings;
 
-        VkDescriptorSetLayout descriptorSetLayout;
+        VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
         if (vkCreateDescriptorSetLayout(app.logicalDevice, &descriptorSetLayoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create descriptor set layout");
         }
@@ -394,8 +525,10 @@ namespace {
         layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         layoutInfo.setLayoutCount = descriptorSetLayouts.size();
         layoutInfo.pSetLayouts = descriptorSetLayouts.data();
+        layoutInfo.pushConstantRangeCount = 0;
+        layoutInfo.pPushConstantRanges = nullptr;
 
-        VkPipelineLayout pipelineLayout;
+        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         if (vkCreatePipelineLayout(app.logicalDevice, &layoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create pipeline layout.");
         }
@@ -456,9 +589,9 @@ namespace {
         vertexInputs[0].binding = 0;
         vertexInputs[0].stride = sizeof(float) * 3;
         vertexInputs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        //Textures 2 floats
+        //Textures 3 floats
         vertexInputs[1].binding = 1;
-        vertexInputs[1].stride = sizeof(float) * 2;
+        vertexInputs[1].stride = sizeof(float) * 3;
         vertexInputs[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
         // Attributes of the above inputs
@@ -471,12 +604,14 @@ namespace {
         // Textures
         vertexAttributes[1].binding = 1;
         vertexAttributes[1].location = 1;
-        vertexAttributes[1].format = VK_FORMAT_R32G32_SFLOAT;
+        vertexAttributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         vertexAttributes[1].offset = 0;
 
         // Vertex shader info using the above descriptions
         VkPipelineVertexInputStateCreateInfo vertexInfo{};
         vertexInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        /*
+        */
         vertexInfo.vertexBindingDescriptionCount = 2;
         vertexInfo.pVertexBindingDescriptions = vertexInputs;
         vertexInfo.vertexAttributeDescriptionCount = 2;
@@ -556,13 +691,13 @@ namespace {
         pipeInfo.pViewportState = &viewportInfo;
         pipeInfo.pRasterizationState = &rasterizationInfo;
         pipeInfo.pMultisampleState = &samplingInfo;
-        pipeInfo.pDepthStencilState = &depthInfo; // depth buffers
+        //pipeInfo.pDepthStencilState = &depthInfo; // depth buffers
         pipeInfo.pColorBlendState = &colourBlendInfo;
         pipeInfo.layout = pipeLayout;
         pipeInfo.renderPass = renderPass;
         pipeInfo.subpass = 0;
 
-        VkPipeline pipeline;
+        VkPipeline pipeline = VK_NULL_HANDLE;
         if (vkCreateGraphicsPipelines(app.logicalDevice, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &pipeline) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create graphics pipeline.");
         }
@@ -576,7 +711,7 @@ namespace {
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.flags = 0;
         framebufferInfo.renderPass = renderPass;
-        framebufferInfo.attachmentCount = buffers.size();
+        framebufferInfo.attachmentCount = std::uint32_t(buffers.size());
         framebufferInfo.pAttachments = buffers.data();
         framebufferInfo.width = app.swapchainExtent.width;
         framebufferInfo.height = app.swapchainExtent.height;
@@ -630,6 +765,136 @@ namespace {
         return descriptorSet;
     }
 
+    void updateWorldUniforms(WorldView& worldUniform, float screenAspect) {
+        // Update the projection matrix
+        worldUniform.projectionMatrix = glm::perspectiveRH_ZO(float(glm::radians(60.0f)), screenAspect, 0.1f, 100.0f);
+        worldUniform.projectionMatrix[1][1] *= -1.f;
+        worldUniform.cameraMatrix = glm::translate(glm::vec3(0.f, -0.3f, -1.f));
+        worldUniform.projectionCameraMatrix = worldUniform.projectionMatrix * worldUniform.cameraMatrix;
+    }
 
+    void recordCommands(
+        VkCommandBuffer commandBuffer,                              // Command buffer
+        VkBuffer worldUniformBuffer, WorldView worldUniform,        // World Uniform
+        VkRenderPass renderPass, VkFramebuffer frameBuffer,         // Render pass
+        VkRect2D renderArea, 
+        VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
+        VkDescriptorSet worldDescriptorSet,                         // World descriptors
+        VkBuffer positionBuffer, VkBuffer colourBuffer,             // Per vertex data
+        std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
+        std::uint32_t numVertices                                   // Vertex data
+    ) {
+        // Set up and start the command buffer recording
+        VkCommandBufferBeginInfo recordInfo{};
+        recordInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        recordInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
+        if (vkBeginCommandBuffer(commandBuffer, &recordInfo) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to start command buffer recording.");
+        }
+
+        // Upload any uniforms that may have been updated
+        // Re-assign the usage of the buffer
+        utility::createBarrier(worldUniformBuffer, VK_WHOLE_SIZE,
+            VK_ACCESS_UNIFORM_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            commandBuffer, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT
+        );
+        // Update
+        vkCmdUpdateBuffer(commandBuffer, worldUniformBuffer, 0, sizeof(WorldView), &worldUniform);
+        // Re-assign the usage of the buffer back to its original state
+        utility::createBarrier(worldUniformBuffer, VK_WHOLE_SIZE,
+            VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_UNIFORM_READ_BIT,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
+        );
+
+        // Define a colour for background of the renderpass
+        VkClearValue backgroundColour{};
+        backgroundColour.color.float32[0] = 0.6f;
+        backgroundColour.color.float32[1] = 0.1f;
+        backgroundColour.color.float32[2] = 0.1f;
+        backgroundColour.color.float32[3] = 1.0f;
+
+        // Begin the render pass
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = frameBuffer;
+        renderPassInfo.renderArea = renderArea;
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &backgroundColour;
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        // Select a pipeline to draw with
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        
+        /*
+        */
+        // Bind the uniforms to the pipeline
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &worldDescriptorSet, 0, nullptr);
+
+        // Bind the per vertex buffers
+        VkBuffer buffers[2] = { positionBuffer, colourBuffer };
+        VkDeviceSize offsets[2]{};
+
+        vkCmdBindVertexBuffers(commandBuffer, 0, 2, buffers, offsets);
+
+        // Do the draw call
+        vkCmdDraw(commandBuffer, numVertices, 1, 0, 0);
+
+        // End the renderpass
+        vkCmdEndRenderPass(commandBuffer);
+
+        // End the command buffer recording
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to record to the command buffer.");
+        }
+
+        return;
+    }
+
+    void submitCommands(app::AppContext app, VkCommandBuffer commandBuffer, VkSemaphore wait, VkSemaphore signal, VkFence fence) {
+        // Create the submission info
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        // Wait for the colour attatchment to be finished
+        VkPipelineStageFlags waitForColour = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = &wait;
+        submitInfo.pWaitDstStageMask = &waitForColour;
+
+        // Signal that there has been a submission
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = &signal;
+
+        // Submit
+        if (vkQueueSubmit(app.graphicsQueue, 1, &submitInfo, fence) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to submit the command buffer.");
+        }
+
+        return;
+    }
+
+    void presentToScreen(app::AppContext app, VkSemaphore finishedSemaphore, std::uint32_t swapchainIndex) {
+        // Set up the presentation info
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = &finishedSemaphore;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &app.swapchain;
+        presentInfo.pImageIndices = &swapchainIndex;
+        presentInfo.pResults = nullptr;
+
+        // Present
+        if (vkQueuePresentKHR(app.presentQueue, &presentInfo) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to present the swapchain.");
+        }
+
+        return;
+    }
 }

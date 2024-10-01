@@ -13,11 +13,46 @@ namespace utility {
 	class BufferSet
 	{
 	public:
-		BufferSet(), ~BufferSet();
+		
+		/// <summary>
+		/// Default constructor
+		/// </summary>
+		BufferSet();
 
-		VkBuffer buffer;
-		VmaAllocation allocation;
-		VmaAllocator allocator;
+		/// <summary>
+		/// Parameterised constructor
+		/// </summary>
+		/// <param name="allocator">Memory allocator</param>
+		/// <param name="buffer">Memory buffer</param>
+		/// <param name="allocation">Memory allocation</param>
+		BufferSet(VmaAllocator allocator, VkBuffer buffer, VmaAllocation allocation);
+
+		/// <summary>
+		/// Destructor
+		/// </summary>
+		~BufferSet();
+		
+		// Delete the copy constructors to avoid duplicating the buffer by accident
+		BufferSet(BufferSet&) = delete;
+		BufferSet& operator= (BufferSet&) = delete;
+
+		/// <summary>
+		/// Move constructor (Should not throw exceptions)
+		/// </summary>
+		/// <param name="other">The original buffer</param>
+		BufferSet(BufferSet&& other) noexcept;
+		
+		/// <summary>
+		/// Move assignment operator (Should not throw exceptions)
+		/// </summary>
+		/// <param name="other">The original buffer</param>
+		/// <returns>A buffer set</returns>
+		BufferSet& operator = (BufferSet&& other) noexcept;
+
+	public:
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VmaAllocation allocation = VK_NULL_HANDLE;
+		VmaAllocator allocator = VK_NULL_HANDLE;
 
 	};
 
@@ -52,7 +87,7 @@ namespace utility {
 	/// <param name="aDstStageFlags">Future staging flag(s)</param>
 	void createBarrier(
 		VkBuffer buffer,
-		unsigned long long sizeOfBuffer,
+		VkDeviceSize sizeOfBuffer,
 		VkAccessFlags srcAccessMask,
 		VkAccessFlags dstAccessMask,
 		std::uint32_t srcQueueFamilyIndex,

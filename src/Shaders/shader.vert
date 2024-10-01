@@ -1,21 +1,21 @@
-// Default .vert outline taken from vulkan-tutorial.com
 #version 450
 
-layout(location = 0) out vec3 fragColor;
+layout(location = 0) in vec3 iPosition;
+layout(location = 1) in vec3 iColor;
 
-vec2 positions[3] = vec2[](
-    vec2(0.0, -0.5),
-    vec2(0.5, 0.5),
-    vec2(-0.5, 0.5)
-);
+layout(set = 0, binding = 0) uniform UScene
+{
+	mat4 camera;
+	mat4 projection;
+	mat4 projCam;
+} uScene;
 
-vec3 colors[3] = vec3[](
-    vec3(1.0, 0.0, 0.0),
-    vec3(0.0, 1.0, 0.0),
-    vec3(0.0, 0.0, 1.0)
-);
+// v2f means vertex to fragment
+layout(location = 0) out vec3 v2fColor; 
 
-void main() {
-    gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
-    fragColor = colors[gl_VertexIndex];
+void main()
+{
+	v2fColor = iColor;
+
+	gl_Position = uScene.projCam * vec4(iPosition, 1.f);
 }

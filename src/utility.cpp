@@ -1,45 +1,72 @@
 #include "utility.hpp"
+#include <cassert>
 
 namespace utility {
 
 	BufferSet::BufferSet() = default;
 
-	BufferSet::~BufferSet() {
-		vmaDestroyBuffer(allocator, buffer, allocation);
+	BufferSet::BufferSet(VmaAllocator inAllocator, VkBuffer inBuffer, VmaAllocation inAllocation)
+	{
+		allocator = inAllocator;
+		buffer = inBuffer;
+		allocation = inAllocation;
+	}
+
+	BufferSet::~BufferSet()
+	{
+		if (buffer != VK_NULL_HANDLE)
+		{
+			vmaDestroyBuffer(allocator, buffer, allocation);
+		}
+	}
+
+	BufferSet::BufferSet(BufferSet&& other)	noexcept
+		: allocator(std::exchange(other.allocator, VK_NULL_HANDLE))
+		, buffer(std::exchange(other.buffer, VK_NULL_HANDLE))
+		, allocation(std::exchange(other.allocation, VK_NULL_HANDLE))
+	{
+	}
+
+	BufferSet& BufferSet::operator=(BufferSet&& other) noexcept
+	{
+		std::swap(allocator, other.allocator);
+		std::swap(buffer, other.buffer);
+		std::swap(allocation, other.allocation);
+		return *this;
 	}
 
 	BufferSet createBuffer(
-		VmaAllocator& allocator, 
+		VmaAllocator& allocator,
 		VkDeviceSize sizeOfData, 
 		VkBufferUsageFlags usageFlags,
 		VmaMemoryUsage memoryUsageFlags,
 		VmaAllocationCreateFlags memoryFlags
 	) {
-		// Set up the details about the VMA allocator
-		VmaAllocationCreateInfo allocationInfo{};
-		allocationInfo.usage = memoryUsageFlags;
-		allocationInfo.flags = memoryFlags;		
-		
 		// Set up the buffer info data structure
 		VkBufferCreateInfo bufferInfo{};
 		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferInfo.size = sizeOfData;
 		bufferInfo.usage = usageFlags;
 
+		// Set up the details about the VMA allocator
+		VmaAllocationCreateInfo allocationInfo{};
+		allocationInfo.usage = memoryUsageFlags;
+		allocationInfo.flags = memoryFlags;		
+
+		VkBuffer buffer = VK_NULL_HANDLE;
+		VmaAllocation allocation = VK_NULL_HANDLE;
+
 		// Create the buffer
-		BufferSet bufferSet;
-		if (vmaCreateBuffer(allocator, &bufferInfo, &allocationInfo, &bufferSet.buffer, &bufferSet.allocation, nullptr) != VK_SUCCESS) {
+		if (vmaCreateBuffer(allocator, &bufferInfo, &allocationInfo, &buffer, &allocation, nullptr) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create buffer.");
 		}
 
-		bufferSet.allocator = allocator;
-
-		return bufferSet;
+		return BufferSet(allocator, buffer, allocation);
 	}
 
 	void createBarrier(
 		VkBuffer buffer, 
-		unsigned long long sizeOfBuffer, 
+		VkDeviceSize sizeOfBuffer, 
 		VkAccessFlags srcAccessMask,
 		VkAccessFlags dstAccessMask,
 		std::uint32_t srcQueueFamilyIndex,
@@ -52,6 +79,7 @@ namespace utility {
 		bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
 		bufferBarrier.buffer = buffer;
 		bufferBarrier.size = sizeOfBuffer;
+		bufferBarrier.offset = 0;
 		bufferBarrier.srcAccessMask = srcAccessMask;
 		bufferBarrier.dstAccessMask = dstAccessMask;
 		bufferBarrier.srcQueueFamilyIndex = srcQueueFamilyIndex;

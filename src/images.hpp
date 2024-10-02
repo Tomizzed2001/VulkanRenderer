@@ -13,9 +13,9 @@ namespace utility {
 	class ImageSet
 	{
 	public:
-		VkImage image;
-		VkImageView imageView;
-		VmaAllocation allocation;
+		VkImage image = VK_NULL_HANDLE;
+		VkImageView imageView = VK_NULL_HANDLE;
+		VmaAllocation allocation = VK_NULL_HANDLE;
 	};
 
 	/// <summary>
@@ -23,7 +23,11 @@ namespace utility {
 	/// </summary>
 	/// <param name="app">Context of the application</param>
 	/// <param name="allocator">Memory allocator</param>
+	/// <param name="format">Image format</param>
+	/// <param name="usageFlags">Usage flags for the image</param>
+	/// <param name="aspectFlagBits">Image aspect flags</param>
 	/// <returns>Class containing image, image view and allocation</returns>
-	ImageSet createImageSet(app::AppContext& app, VmaAllocator& allocator);
+	ImageSet createImageSet(app::AppContext& app, VmaAllocator& allocator, VkFormat format, VkImageUsageFlags usageFlags, VkImageAspectFlagBits aspectFlagBits);
+
 
 }

@@ -233,6 +233,8 @@ int main() {
         // Create the renderpass
         VkRenderPass renderPass = createRenderPass(application);
 
+        std::cout << "Here" << std::endl;
+
         // Create the descriptor set layouts
         // World descriptor set layout contains the world view matrices
         VkDescriptorSetLayout worldDescriptorSetLayout = createWorldDescriptorSetLayout(application);
@@ -251,8 +253,9 @@ int main() {
         // Create the pipeline
         VkPipeline pipeline = createPipeline(application, pipelineLayout, renderPass, vertexShader, fragmentShader);
 
-        // Create a vkImage and vkImageView to store the colour of the framebuffer
-        //utility::ImageSet colourImageSet = utility::createImageSet(application, allocator);
+        // Create a vkImage and vkImageView to store the depth buffer
+        utility::ImageSet depthBuffer = utility::createImageSet(application, allocator,
+            VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
 
         // Create the framebuffers to store the results of the render pass
         //std::vector<VkImageView> buffers;
@@ -265,6 +268,7 @@ int main() {
             // Get the attatchments
             std::vector<VkImageView> swapchainAttatchments;
             swapchainAttatchments.emplace_back(application.swapchainImageViews[i]);
+            swapchainAttatchments.emplace_back(depthBuffer.imageView);
             
             // Create the framebuffer
             swapchainFramebuffers.emplace_back(createFramebuffer(application, renderPass, swapchainAttatchments));
@@ -297,11 +301,6 @@ int main() {
             fbxColours.emplace_back(glm::vec3(0.4, 0.4, 0.1));
         }
         std::cout << fbxScene.meshes[0].vertexIndices.size() << std::endl;
-        /*
-        for (int i = 0; i < fbxScene.meshes[0].vertexIndices.size(); i++) {
-            std::cout << fbxScene.meshes[0].vertexIndices[i] << std::endl;
-        }
-        */
 
         // Load in the model
         model::Mesh mesh = model::createMesh(application, allocator, fbxScene.meshes[0].vertexPositions, fbxColours, fbxScene.meshes[0].vertexIndices);
@@ -409,8 +408,8 @@ int main() {
             vkDestroyFence(application.logicalDevice, fences[i], nullptr);
         }
         //vkDestroyFramebuffer(application.logicalDevice, colourFramebuffer, nullptr);
-        //vmaDestroyImage(allocator, colourImageSet.image, colourImageSet.allocation);
-        //vkDestroyImageView(application.logicalDevice, colourImageSet.imageView, nullptr);
+        vmaDestroyImage(allocator, depthBuffer.image, depthBuffer.allocation);
+        vkDestroyImageView(application.logicalDevice, depthBuffer.imageView, nullptr);
         vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
         vkDestroyShaderModule(application.logicalDevice, vertexShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, fragmentShader, nullptr);
@@ -549,7 +548,7 @@ namespace {
     VkRenderPass createRenderPass(app::AppContext& app) {
         // Define the attatchments of the render pass
         // The swapchain attatchment
-        VkAttachmentDescription attachments[1]{};
+        VkAttachmentDescription attachments[2]{};
         attachments[0].format = app.swapchainFormat;
         attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
         attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -557,14 +556,12 @@ namespace {
         attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         // The depth buffer attachment
-        /*
         attachments[1].format = VK_FORMAT_D32_SFLOAT;
         attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
         attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        */
 
         // Define the attatchment propeties for a subpass
         VkAttachmentReference colourAttachment{};
@@ -581,10 +578,10 @@ namespace {
         subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpasses[0].colorAttachmentCount = 1;
         subpasses[0].pColorAttachments = &colourAttachment;
-        //subpasses.pDepthStencilAttachment = &depthAttachment;
+        subpasses[0].pDepthStencilAttachment = &depthAttachment;
 
         // Set the dependencies of each subpass
-        VkSubpassDependency subpassDependencies[1]{};
+        VkSubpassDependency subpassDependencies[2]{};
         // For the colour
         subpassDependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
         subpassDependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -594,7 +591,6 @@ namespace {
         subpassDependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
         subpassDependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         // For the depth
-        /*
         subpassDependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
         subpassDependencies[1].srcSubpass = VK_SUBPASS_EXTERNAL;
         subpassDependencies[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -602,16 +598,15 @@ namespace {
         subpassDependencies[1].dstSubpass = 0;
         subpassDependencies[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
         subpassDependencies[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-        */
 
         // Combine all the data to create the renderpass info
         VkRenderPassCreateInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassInfo.attachmentCount = 1;
+        renderPassInfo.attachmentCount = 2;
         renderPassInfo.pAttachments = attachments;
         renderPassInfo.subpassCount = 1;
         renderPassInfo.pSubpasses = subpasses;
-        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.dependencyCount = 2;
         renderPassInfo.pDependencies = subpassDependencies;
 
         // Create the renderpass
@@ -723,7 +718,7 @@ namespace {
         vertexInputs[0].binding = 0;
         vertexInputs[0].stride = sizeof(float) * 3;
         vertexInputs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        //Textures 3 floats
+        //Colours 3 floats
         vertexInputs[1].binding = 1;
         vertexInputs[1].stride = sizeof(float) * 3;
         vertexInputs[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
@@ -735,7 +730,7 @@ namespace {
         vertexAttributes[0].location = 0;
         vertexAttributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         vertexAttributes[0].offset = 0;
-        // Textures
+        // Colours
         vertexAttributes[1].binding = 1;
         vertexAttributes[1].location = 1;
         vertexAttributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -744,8 +739,6 @@ namespace {
         // Vertex shader info using the above descriptions
         VkPipelineVertexInputStateCreateInfo vertexInfo{};
         vertexInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        /*
-        */
         vertexInfo.vertexBindingDescriptionCount = 2;
         vertexInfo.pVertexBindingDescriptions = vertexInputs;
         vertexInfo.vertexAttributeDescriptionCount = 2;
@@ -825,7 +818,7 @@ namespace {
         pipeInfo.pViewportState = &viewportInfo;
         pipeInfo.pRasterizationState = &rasterizationInfo;
         pipeInfo.pMultisampleState = &samplingInfo;
-        //pipeInfo.pDepthStencilState = &depthInfo; // depth buffers
+        pipeInfo.pDepthStencilState = &depthInfo;
         pipeInfo.pColorBlendState = &colourBlendInfo;
         pipeInfo.layout = pipeLayout;
         pipeInfo.renderPass = renderPass;
@@ -947,11 +940,14 @@ namespace {
         );
 
         // Define a colour for background of the renderpass
-        VkClearValue backgroundColour{};
-        backgroundColour.color.float32[0] = 0.6f;
-        backgroundColour.color.float32[1] = 0.1f;
-        backgroundColour.color.float32[2] = 0.1f;
-        backgroundColour.color.float32[3] = 1.0f;
+        VkClearValue backgroundColour[2]{};
+        // Swapchain colour background
+        backgroundColour[0].color.float32[0] = 0.6f;
+        backgroundColour[0].color.float32[1] = 0.1f;
+        backgroundColour[0].color.float32[2] = 0.1f;
+        backgroundColour[0].color.float32[3] = 1.0f;
+        // Depth buffer clear background
+        backgroundColour[1].depthStencil.depth = 1.0f;
 
         // Begin the render pass
         VkRenderPassBeginInfo renderPassInfo{};
@@ -959,15 +955,13 @@ namespace {
         renderPassInfo.renderPass = renderPass;
         renderPassInfo.framebuffer = frameBuffer;
         renderPassInfo.renderArea = renderArea;
-        renderPassInfo.clearValueCount = 1;
-        renderPassInfo.pClearValues = &backgroundColour;
+        renderPassInfo.clearValueCount = 2;
+        renderPassInfo.pClearValues = backgroundColour;
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         // Select a pipeline to draw with
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        
-        /*
-        */
+
         // Bind the uniforms to the pipeline
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &worldDescriptorSet, 0, nullptr);
 

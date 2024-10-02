@@ -9,7 +9,7 @@ namespace model {
 		// Size of the input data in bytes (use long long since the number can be very large)
 		unsigned long long sizeOfPositions = vPositions.size() * sizeof(glm::vec3);
 		unsigned long long sizeOfColours = vColours.size() * sizeof(glm::vec3);
-		unsigned long long sizeOfIndices = vColours.size() * sizeof(glm::vec3);
+		unsigned long long sizeOfIndices = indices.size() * sizeof(std::uint32_t);
 		
 		// Create the buffers on the GPU to hold the data
 		utility::BufferSet positionBuffer = utility::createBuffer(

@@ -272,7 +272,6 @@ namespace {
     /// </summary>
     void deviceSetup(app::AppContext *aApp) {
         // Select appropriate Vulkan device and output the name of it
-        VkPhysicalDevice physicalDevice;
         aApp->physicalDevice = selectPhysicalDevice(aApp->instance, aApp->surface);
         if (VK_NULL_HANDLE == aApp->physicalDevice) {
             throw std::runtime_error("No suitable physical device found!");

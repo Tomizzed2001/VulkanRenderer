@@ -23,6 +23,8 @@
 #include "images.hpp"
 #include "utility.hpp"
 #include "model.hpp"
+#include "FBXFileLoader.hpp"
+
 
 namespace {
 
@@ -287,41 +289,22 @@ int main() {
         VkSemaphore imageIsReady = utility::createSemaphore(application, 0);
         VkSemaphore renderHasFinished = utility::createSemaphore(application, 0);
 
-        // Temporarily define model here
-        std::vector<glm::vec3> pos;
-        pos.emplace_back(glm::vec3(-2, 0, -2));
-        pos.emplace_back(glm::vec3(-2, 0, 2));
-        pos.emplace_back(glm::vec3(2, 0, 2));
-
-        pos.emplace_back(glm::vec3(-2, 0, -2));
-        pos.emplace_back(glm::vec3(2, 0, 2));
-        pos.emplace_back(glm::vec3(2, 0, -2));
-
-        std::vector<glm::vec3> posIndexed;
-        posIndexed.emplace_back(glm::vec3(-2, 0, -2));
-        posIndexed.emplace_back(glm::vec3(-2, 0, 2));
-        posIndexed.emplace_back(glm::vec3(2, 0, 2));
-        posIndexed.emplace_back(glm::vec3(2, 0, -2));
-
-        std::vector<glm::vec3> col;
-        col.emplace_back(glm::vec3(1, 0, 0));
-        col.emplace_back(glm::vec3(0, 1, 0));
-        col.emplace_back(glm::vec3(0, 0, 1));
-
-        col.emplace_back(glm::vec3(1, 0, 0));
-        col.emplace_back(glm::vec3(0, 0, 1));
-        col.emplace_back(glm::vec3(0, 1, 0));
-
-        std::vector<std::uint32_t> indices;
-        indices.emplace_back(0);
-        indices.emplace_back(1);
-        indices.emplace_back(2);
-        indices.emplace_back(0);
-        indices.emplace_back(2);
-        indices.emplace_back(3);
+        // Load an FBX model
+        fbx::Scene fbxScene = fbx::loadFBXFile("Cube.fbx");
+        std::vector<glm::vec3> fbxColours;
+        for (int i = 0; i < fbxScene.meshes[0].vertexPositions.size(); i++) {
+            std::cout << glm::to_string(fbxScene.meshes[0].vertexPositions[i]) << std::endl;
+            fbxColours.emplace_back(glm::vec3(0.4, 0.4, 0.1));
+        }
+        std::cout << fbxScene.meshes[0].vertexIndices.size() << std::endl;
+        /*
+        for (int i = 0; i < fbxScene.meshes[0].vertexIndices.size(); i++) {
+            std::cout << fbxScene.meshes[0].vertexIndices[i] << std::endl;
+        }
+        */
 
         // Load in the model
-        model::Mesh mesh = model::createMesh(application, allocator, posIndexed, col, indices);
+        model::Mesh mesh = model::createMesh(application, allocator, fbxScene.meshes[0].vertexPositions, fbxColours, fbxScene.meshes[0].vertexIndices);
 
         // Create descriptor pool
         VkDescriptorPool descriptorPool = createDescriptorPool(application);

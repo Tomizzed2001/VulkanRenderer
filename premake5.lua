@@ -16,8 +16,8 @@ workspace "VulkanRenderer"
     filter "*"
 
     -- Include files
-    includedirs{"ExternalLibraries/Vulkan/Include", "ExternalLibraries/glfw/include", "ExternalLibraries/glm", "ExternalLibraries/VulkanMemoryAllocator/include"}
-
+    includedirs{"ExternalLibraries/Vulkan/Include", "ExternalLibraries/glfw/include", "ExternalLibraries/glm", "ExternalLibraries/VulkanMemoryAllocator/include", "ExternalLibraries/FbxFileLoader", "C:/Program Files/Autodesk/FBX/FBX SDK/2020.3.7/include"}
+    
     -- Libraries
     libdirs{"ExternalLibraries/glfw/lib-vc2022", "ExternalLibraries/Vulkan/Lib"}
     links{"vulkan-1.lib", "glfw3.lib"}

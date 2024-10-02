@@ -181,7 +181,7 @@ namespace {
         VkRect2D renderArea,
         VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
-        model::Mesh& mesh,                                          // Mesh data
+        std::vector<model::Mesh>& mesh,                             // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets                    // Per vertex data
     );
     
@@ -219,12 +219,16 @@ int main() {
         // Set up the GLFW inputs
         // Sets player camera as the user of the window
         glfwSetWindowUserPointer(application.window, &playerCamera);
+
         // Sets up the key call back function
         glfwSetKeyCallback(application.window, keyCallback);
+
         // Sets up the mouse button call back function
         glfwSetMouseButtonCallback(application.window, &mouseButtonCallback);
+
         // Sets up the mouse call back function
         glfwSetCursorPosCallback(application.window, &mouseCallback);
+        
         // -- The setup -- //
         
         // Create the memory allocator
@@ -232,8 +236,6 @@ int main() {
 
         // Create the renderpass
         VkRenderPass renderPass = createRenderPass(application);
-
-        std::cout << "Here" << std::endl;
 
         // Create the descriptor set layouts
         // World descriptor set layout contains the world view matrices
@@ -256,11 +258,6 @@ int main() {
         // Create a vkImage and vkImageView to store the depth buffer
         utility::ImageSet depthBuffer = utility::createImageSet(application, allocator,
             VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-        // Create the framebuffers to store the results of the render pass
-        //std::vector<VkImageView> buffers;
-        //buffers.emplace_back(colourImageSet.imageView);
-        //VkFramebuffer colourFramebuffer = createFramebuffer(application, renderPass, buffers);
 
         // Create the swapchain framebuffers (one for each of the image views)
         std::vector<VkFramebuffer> swapchainFramebuffers;
@@ -294,16 +291,23 @@ int main() {
         VkSemaphore renderHasFinished = utility::createSemaphore(application, 0);
 
         // Load an FBX model
-        fbx::Scene fbxScene = fbx::loadFBXFile("Cube.fbx");
-        std::vector<glm::vec3> fbxColours;
-        for (int i = 0; i < fbxScene.meshes[0].vertexPositions.size(); i++) {
-            std::cout << glm::to_string(fbxScene.meshes[0].vertexPositions[i]) << std::endl;
-            fbxColours.emplace_back(glm::vec3(0.4, 0.4, 0.1));
-        }
-        std::cout << fbxScene.meshes[0].vertexIndices.size() << std::endl;
+        fbx::Scene fbxScene = fbx::loadFBXFile("Scene.fbx");
 
-        // Load in the model
-        model::Mesh mesh = model::createMesh(application, allocator, fbxScene.meshes[0].vertexPositions, fbxColours, fbxScene.meshes[0].vertexIndices);
+        int counter = 0;
+        std::vector<glm::vec3> colours;
+        colours.emplace_back(glm::vec3(0.0, 0.6, 0.95));
+        colours.emplace_back(glm::vec3(0.95, 0.0, 0.05));
+
+        // Load all meshes from the fbx model
+        std::vector<model::Mesh> meshes;
+        for (fbx::Mesh mesh : fbxScene.meshes) {
+            std::vector<glm::vec3> fbxColours;
+            for (int i = 0; i < mesh.vertexPositions.size(); i++) {
+                fbxColours.emplace_back(colours[counter]);
+            }
+            meshes.emplace_back(model::createMesh(application, allocator, mesh.vertexPositions, fbxColours, mesh.vertexIndices));
+            counter++;
+        }
 
         // Create descriptor pool
         VkDescriptorPool descriptorPool = createDescriptorPool(application);
@@ -374,7 +378,7 @@ int main() {
                 pipeline,
                 pipelineLayout,
                 worldDescriptorSet,
-                mesh,
+                meshes,
                 meshOffsets
             );
 
@@ -396,9 +400,11 @@ int main() {
 
         // Clean up and close the application
         worldUniformBuffer.~BufferSet();
-        mesh.vertexPositions.~BufferSet();
-        mesh.vertexColours.~BufferSet();
-        mesh.indices.~BufferSet();
+        for (size_t i = 0; i < meshes.size(); i++) {
+            meshes[i].vertexPositions.~BufferSet();
+            meshes[i].vertexColours.~BufferSet();
+            meshes[i].indices.~BufferSet();
+        }
         vkDestroyDescriptorPool(application.logicalDevice, descriptorPool, nullptr);
         vkDestroySemaphore(application.logicalDevice, renderHasFinished, nullptr);
         vkDestroySemaphore(application.logicalDevice, imageIsReady, nullptr);
@@ -407,7 +413,6 @@ int main() {
             vkDestroyFramebuffer(application.logicalDevice, swapchainFramebuffers[i], nullptr);
             vkDestroyFence(application.logicalDevice, fences[i], nullptr);
         }
-        //vkDestroyFramebuffer(application.logicalDevice, colourFramebuffer, nullptr);
         vmaDestroyImage(allocator, depthBuffer.image, depthBuffer.allocation);
         vkDestroyImageView(application.logicalDevice, depthBuffer.imageView, nullptr);
         vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
@@ -418,8 +423,6 @@ int main() {
         vkDestroyRenderPass(application.logicalDevice, renderPass, nullptr);
         vmaDestroyAllocator(allocator);
         application.cleanup();
-
-        std::cout << "Cleaning" << std::endl;
         return 0;
     }
     catch (const std::exception& e) {
@@ -911,7 +914,7 @@ namespace {
         VkRect2D renderArea,
         VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
-        model::Mesh& mesh,                                          // Mesh data
+        std::vector<model::Mesh>& meshes,                           // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets                    // Per vertex data
     ) {
         // Set up and start the command buffer recording
@@ -965,17 +968,20 @@ namespace {
         // Bind the uniforms to the pipeline
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &worldDescriptorSet, 0, nullptr);
 
-        // Bind the per vertex buffers
-        VkBuffer buffers[2] = { mesh.vertexPositions.buffer, mesh.vertexColours.buffer };
-        VkDeviceSize offsets[2]{};
-        vkCmdBindVertexBuffers(commandBuffer, 0, 2, buffers, offsets);
+        // Draw each separate mesh to screen
+        for (size_t i = 0; i < meshes.size(); i++) {
+            // Bind the per vertex buffers
+            VkBuffer buffers[2] = { meshes[i].vertexPositions.buffer, meshes[i].vertexColours.buffer};
+            VkDeviceSize offsets[2]{};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 2, buffers, offsets);
 
-        // Bind the index buffer
-        vkCmdBindIndexBuffer(commandBuffer, mesh.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+            // Bind the index buffer
+            vkCmdBindIndexBuffer(commandBuffer, meshes[i].indices.buffer, 0, VK_INDEX_TYPE_UINT32);
 
-        // Do the draw call
-        //vkCmdDraw(commandBuffer, mesh.numberOfVertices, 1, 0, 0);
-        vkCmdDrawIndexed(commandBuffer, mesh.numberOfIndices, 1, 0, 0, 0);
+            // Do the draw call
+            //vkCmdDraw(commandBuffer, mesh.numberOfVertices, 1, 0, 0);
+            vkCmdDrawIndexed(commandBuffer, meshes[i].numberOfIndices, 1, 0, 0, 0);
+        }
 
         // End the renderpass
         vkCmdEndRenderPass(commandBuffer);

@@ -26,6 +26,16 @@
 
 namespace {
 
+    struct CameraInfo {
+        glm::vec3 position = glm::vec3(0);
+
+        glm::vec2 mousePosition;
+
+        glm::mat4 worldCameraMatrix = glm::mat4(1);
+
+        bool isLooking = false;
+    };
+
     struct WorldView {
         glm::mat4 cameraMatrix;
         glm::mat4 projectionMatrix;
@@ -36,6 +46,33 @@ namespace {
         char const* vertexShaderPath = "Shaders/vert.spv";
         char const* fragmentShaderPath = "Shaders/frag.spv";
     }
+
+    /// <summary>
+    /// Configure the key callback for the glfw window
+    /// </summary>
+    /// <param name="window">Glfw window</param>
+    /// <param name="key"></param>
+    /// <param name="scancode"></param>
+    /// <param name="action"></param>
+    /// <param name="mods"></param>
+    void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+
+    /// <summary>
+    /// Configure the mouse button callback for the glfw window
+    /// </summary>
+    /// <param name="window">Glfw window</param>
+    /// <param name="button">Mouse button</param>
+    /// <param name="action">The state of the mouse button</param>
+    /// <param name="mods"></param>
+    void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+
+    /// <summary>
+    /// Configure the mouse callback for thee glfw window
+    /// </summary>
+    /// <param name="window">Glfw window</param>
+    /// <param name="mouseX">Direction in x that mouse is looking</param>
+    /// <param name="mouseY">Direction in y that mouse is looking</param>
+    void mouseCallback(GLFWwindow* window, double mouseX, double mouseY);
 
     /// <summary>
     /// Creates a memory allocator using the vma library for Vulkan
@@ -117,7 +154,8 @@ namespace {
     /// </summary>
     /// <param name="worldUniform">The uniform to be updated</param>
     /// <param name="screenAspect">The aspect value of the swapchain</param>
-    void updateWorldUniforms(WorldView& worldUniform, float screenAspect);
+    /// <param name="cameraInfo">The camera info struct defining location and view</param>
+    void updateWorldUniforms(WorldView& worldUniform, float screenAspect, CameraInfo& cameraInfo);
 
     /// <summary>
     /// Records the rendering information and sets up the draw calls
@@ -171,6 +209,22 @@ int main() {
         // -- The setup -- //
         app::AppContext application = app::setup();
 
+        // Set up the player camera state
+        CameraInfo playerCamera;
+        playerCamera.position = glm::vec3(0.0, 0.3, 1.0);
+        playerCamera.worldCameraMatrix = playerCamera.worldCameraMatrix * glm::translate(playerCamera.position);
+
+        // Set up the GLFW inputs
+        // Sets player camera as the user of the window
+        glfwSetWindowUserPointer(application.window, &playerCamera);
+        // Sets up the key call back function
+        glfwSetKeyCallback(application.window, keyCallback);
+        // Sets up the mouse button call back function
+        glfwSetMouseButtonCallback(application.window, &mouseButtonCallback);
+        // Sets up the mouse call back function
+        glfwSetCursorPosCallback(application.window, &mouseCallback);
+        // -- The setup -- //
+        
         // Create the memory allocator
         VmaAllocator allocator = createMemoryAllocator(application);
 
@@ -317,7 +371,7 @@ int main() {
             // Update the world view uniform
             WorldView worldViewUniform;
             float screenAspect = float(application.swapchainExtent.width) / float(application.swapchainExtent.height);
-            updateWorldUniforms(worldViewUniform, screenAspect);
+            updateWorldUniforms(worldViewUniform, screenAspect, playerCamera);
 
             // Get the render area
             VkRect2D renderArea;
@@ -395,6 +449,95 @@ int main() {
 }
 
 namespace {
+
+    void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+    {
+        CameraInfo* camera = static_cast<CameraInfo*>(glfwGetWindowUserPointer(window));
+        
+        // Escape key should close the window
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
+
+        bool keyState = action;
+        glm::vec3 movement = glm::vec3(0,0,0);
+
+        // W key moves the camera forwards
+        if (key == GLFW_KEY_W) {
+            movement = glm::vec3(0.0, 0.0, -0.1);
+        }
+
+        // A key moves the camera to the left
+        if (key == GLFW_KEY_A) {
+            movement = glm::vec3(-0.1, 0.0, 0.0);
+        }
+
+        // S key moves the camera forwards
+        if (key == GLFW_KEY_S) {
+            movement = glm::vec3(0.0, 0.0, 0.1);
+        }
+
+        // F key moves the camera to the right
+        if (key == GLFW_KEY_D) {
+            movement = glm::vec3(0.1, 0.0, 0.0);
+        }
+
+        // E key moves the camera upwards
+        if (key == GLFW_KEY_E) {
+            movement = glm::vec3(0.0, 0.1, 0.0);
+        }
+
+        // Q key moves the camera downwards
+        if (key == GLFW_KEY_Q) {
+            movement = glm::vec3(0.0, -0.1, 0.0);
+        }
+
+        camera->position = camera->position + movement;
+        camera->worldCameraMatrix = camera->worldCameraMatrix * glm::translate(movement);
+
+    }
+
+    void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+        CameraInfo* camera = static_cast<CameraInfo*>(glfwGetWindowUserPointer(window));
+
+        // Right mouse button toggles the viewing function
+        if (GLFW_MOUSE_BUTTON_RIGHT == button && GLFW_PRESS == action) {
+            camera->isLooking = !camera->isLooking;
+
+            if (camera->isLooking) {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            }
+            else {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            }
+        }
+    }
+
+    void mouseCallback(GLFWwindow* window, double mouseX, double mouseY) {
+        CameraInfo* camera = static_cast<CameraInfo*>(glfwGetWindowUserPointer(window));
+
+        if (camera->isLooking) {
+            //std::cout << mouseX << " " << mouseY << std::endl;
+            // Get the window dimensions
+            int width, height;
+            glfwGetWindowSize(window, &width, &height);
+
+            // Get the mouse angles in relation to the centre of the screen
+            camera->mousePosition.x = 0.005 * float((width / 2) - mouseX);
+            camera->mousePosition.y = 0.005 * float((height / 2) - mouseY);
+
+            // Rotate the camera
+            /*
+            */
+            camera->worldCameraMatrix = camera->worldCameraMatrix 
+                * glm::rotate(camera->mousePosition.y, glm::vec3(1.0, 0.0, 0.0)) 
+                * glm::rotate(camera->mousePosition.x, glm::vec3(0.0, 1.0, 0.0));
+
+            // Reset the mouse position
+            glfwSetCursorPos(window, width / 2, height / 2);
+        }
+
+    }
 
     VmaAllocator createMemoryAllocator(app::AppContext& app) {
         VkPhysicalDeviceProperties properties{};
@@ -773,11 +916,15 @@ namespace {
         return descriptorSet;
     }
 
-    void updateWorldUniforms(WorldView& worldUniform, float screenAspect) {
+    void updateWorldUniforms(WorldView& worldUniform, float screenAspect, CameraInfo& cameraInfo) {
         // Update the projection matrix
         worldUniform.projectionMatrix = glm::perspectiveRH_ZO(float(glm::radians(60.0f)), screenAspect, 0.1f, 100.0f);
         worldUniform.projectionMatrix[1][1] *= -1.f;
-        worldUniform.cameraMatrix = glm::translate(glm::vec3(0.f, -0.3f, -1.f));
+
+        // Update the camara matrix
+        worldUniform.cameraMatrix = glm::inverse(cameraInfo.worldCameraMatrix);
+
+        // Create the projection camera matrix
         worldUniform.projectionCameraMatrix = worldUniform.projectionMatrix * worldUniform.cameraMatrix;
     }
 

@@ -109,6 +109,134 @@ namespace app {
 
         return context;
 	}
+
+    void swapchainSetup(app::AppContext* aApp) {
+        // Get the capabilities of the swapchain
+        VkSurfaceCapabilitiesKHR capabilities;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(aApp->physicalDevice, aApp->surface, &capabilities);
+
+        // How many images can be in the swapchain
+        // Start with the minimum
+        std::uint32_t imageCount = capabilities.minImageCount + 1;
+        // Check that there is a maximum number of swapchain images and that we
+        // haven't exceeded the maximum amount.
+        if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
+            // Set to the maximum
+            imageCount = capabilities.maxImageCount;
+        }
+
+        // Get the swapchain extent
+        aApp->swapchainExtent = capabilities.currentExtent;
+        // Check that the window can be modified
+        if (capabilities.currentExtent.width == std::numeric_limits<std::uint32_t>::max()) {
+            int width, height;
+            glfwGetFramebufferSize(aApp->window, &width, &height);
+
+            aApp->swapchainExtent.width = std::clamp(std::uint32_t(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+            aApp->swapchainExtent.height = std::clamp(std::uint32_t(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+        }
+
+        // Get the available surface formats for the swapchain
+        std::uint32_t numSurfaceFormats;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(aApp->physicalDevice, aApp->surface, &numSurfaceFormats, nullptr);
+        std::vector<VkSurfaceFormatKHR> surfaceFormats(numSurfaceFormats);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(aApp->physicalDevice, aApp->surface, &numSurfaceFormats, surfaceFormats.data());
+
+        // Default to any format in the list before attempting to find the best
+        VkSurfaceFormatKHR bestSurfaceFormat = surfaceFormats[0];
+
+        // Select the most desireable surface format
+        for (VkSurfaceFormatKHR format : surfaceFormats) {
+            // Best option
+            if (VK_FORMAT_R8G8B8A8_SRGB == format.format && VK_COLOR_SPACE_SRGB_NONLINEAR_KHR == format.colorSpace) {
+                bestSurfaceFormat = format;
+                break;
+            }
+            // Second best option
+            if (VK_FORMAT_B8G8R8A8_SRGB == format.format && VK_COLOR_SPACE_SRGB_NONLINEAR_KHR == format.colorSpace) {
+                bestSurfaceFormat = format;
+                //break;
+            }
+        }
+
+        aApp->swapchainFormat = bestSurfaceFormat.format;
+
+        // Use the FIFO present mode which is guaranteed to be available
+        // To get other options follow a similar format to the one used to 
+        // find the best surface format
+        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+
+        // Create swap chain info
+        VkSwapchainCreateInfoKHR swapchainInfo{};
+        swapchainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+        swapchainInfo.surface = aApp->surface;
+        swapchainInfo.minImageCount = imageCount;
+        swapchainInfo.imageFormat = bestSurfaceFormat.format;
+        swapchainInfo.imageColorSpace = bestSurfaceFormat.colorSpace;
+        swapchainInfo.imageExtent = aApp->swapchainExtent;
+        swapchainInfo.imageArrayLayers = 1;
+        swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        swapchainInfo.preTransform = capabilities.currentTransform;
+        swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        swapchainInfo.presentMode = presentMode;
+        swapchainInfo.clipped = VK_TRUE;
+        //chainInfo.oldSwapchain = aOldSwapchain;
+        if (aApp->queueFamilyIndices.size() <= 1) {
+            swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        }
+        else {
+            //Multiple queues may access this
+            swapchainInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+            swapchainInfo.queueFamilyIndexCount = std::uint32_t(aApp->queueFamilyIndices.size());
+            swapchainInfo.pQueueFamilyIndices = aApp->queueFamilyIndices.data();
+        }
+
+        // Create the swapchain
+        aApp->swapchain;
+        if (vkCreateSwapchainKHR(aApp->logicalDevice, &swapchainInfo, nullptr, &aApp->swapchain) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create swapchain.");
+        }
+
+        return;
+    }
+
+    void createSwapchainImages(app::AppContext* aApp) {
+        // Get swapchain image handles with vkGetSwapchainImagesKHR
+        std::uint32_t numImages = 0;
+        vkGetSwapchainImagesKHR(aApp->logicalDevice, aApp->swapchain, &numImages, nullptr);
+        aApp->swapchainImages.resize(numImages);
+        vkGetSwapchainImagesKHR(aApp->logicalDevice, aApp->swapchain, &numImages, aApp->swapchainImages.data());
+
+        // For each of the images in the swapchain
+        for (size_t i = 0; i < aApp->swapchainImages.size(); i++) {
+            // Create a VkImageView
+            VkImageViewCreateInfo imageViewInfo{};
+            imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            imageViewInfo.image = aApp->swapchainImages[i];
+            imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            imageViewInfo.format = aApp->swapchainFormat;
+            imageViewInfo.components = VkComponentMapping{
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY
+            };
+            imageViewInfo.subresourceRange = VkImageSubresourceRange{
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                0, 1,
+                0, 1
+            };
+
+            VkImageView imageView;
+            if (vkCreateImageView(aApp->logicalDevice, &imageViewInfo, nullptr, &imageView) != VK_SUCCESS) {
+                throw std::runtime_error("Couldn't make an image view for the swapchain images");
+            }
+
+            aApp->swapchainImageViews.emplace_back(imageView);
+        }
+
+    }
+
 }
 
 namespace {
@@ -463,140 +591,5 @@ namespace {
         }
 
         return device;
-    }
-
-    /// <summary>
-    /// Creates the swapchain for the application
-    /// </summary>
-    /// <param name="aApp">The application context</param>
-    void swapchainSetup(app::AppContext* aApp) {
-        // Get the capabilities of the swapchain
-        VkSurfaceCapabilitiesKHR capabilities;
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(aApp->physicalDevice, aApp->surface, &capabilities);
-
-        // How many images can be in the swapchain
-        // Start with the minimum
-        std::uint32_t imageCount = capabilities.minImageCount + 1;
-        // Check that there is a maximum number of swapchain images and that we
-        // haven't exceeded the maximum amount.
-        if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
-            // Set to the maximum
-            imageCount = capabilities.maxImageCount;
-        }
-
-        // Get the swapchain extent
-        aApp->swapchainExtent = capabilities.currentExtent;
-        // Check that the window can be modified
-        if (capabilities.currentExtent.width == std::numeric_limits<std::uint32_t>::max()) {
-            int width, height;
-            glfwGetFramebufferSize(aApp->window, &width, &height);
-
-            aApp->swapchainExtent.width = std::clamp(std::uint32_t(width), capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-            aApp->swapchainExtent.height = std::clamp(std::uint32_t(height), capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-        }
-
-        // Get the available surface formats for the swapchain
-        std::uint32_t numSurfaceFormats;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(aApp->physicalDevice, aApp->surface, &numSurfaceFormats, nullptr);
-        std::vector<VkSurfaceFormatKHR> surfaceFormats(numSurfaceFormats);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(aApp->physicalDevice, aApp->surface, &numSurfaceFormats, surfaceFormats.data());
-
-        // Default to any format in the list before attempting to find the best
-        VkSurfaceFormatKHR bestSurfaceFormat = surfaceFormats[0];
-
-        // Select the most desireable surface format
-        for (VkSurfaceFormatKHR format : surfaceFormats) {
-            // Best option
-            if (VK_FORMAT_R8G8B8A8_SRGB == format.format && VK_COLOR_SPACE_SRGB_NONLINEAR_KHR == format.colorSpace) {
-                bestSurfaceFormat = format;
-                break;
-            }
-            // Second best option
-            if (VK_FORMAT_B8G8R8A8_SRGB == format.format && VK_COLOR_SPACE_SRGB_NONLINEAR_KHR == format.colorSpace) {
-                bestSurfaceFormat = format;
-                //break;
-            }
-        }
-
-        aApp->swapchainFormat = bestSurfaceFormat.format;
-
-        // Use the FIFO present mode which is guaranteed to be available
-        // To get other options follow a similar format to the one used to 
-        // find the best surface format
-        VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
-
-        // Create swap chain info
-        VkSwapchainCreateInfoKHR swapchainInfo{};
-        swapchainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        swapchainInfo.surface = aApp->surface;
-        swapchainInfo.minImageCount = imageCount;
-        swapchainInfo.imageFormat = bestSurfaceFormat.format;
-        swapchainInfo.imageColorSpace = bestSurfaceFormat.colorSpace;
-        swapchainInfo.imageExtent = aApp->swapchainExtent;
-        swapchainInfo.imageArrayLayers = 1;
-        swapchainInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        swapchainInfo.preTransform = capabilities.currentTransform;
-        swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        swapchainInfo.presentMode = presentMode;
-        swapchainInfo.clipped = VK_TRUE;
-        //chainInfo.oldSwapchain = aOldSwapchain;
-        if (aApp->queueFamilyIndices.size() <= 1) {
-            swapchainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        }
-        else {
-            //Multiple queues may access this
-            swapchainInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-            swapchainInfo.queueFamilyIndexCount = std::uint32_t(aApp->queueFamilyIndices.size());
-            swapchainInfo.pQueueFamilyIndices = aApp->queueFamilyIndices.data();
-        }
-
-        // Create the swapchain
-        aApp->swapchain;
-        if (vkCreateSwapchainKHR(aApp->logicalDevice, &swapchainInfo, nullptr, &aApp->swapchain) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create swapchain.");
-        }
-
-        return;
-    }
-
-    /// <summary>
-    /// Creates the swapchain images for the application's swapchain
-    /// </summary>
-    /// <param name="aApp">The application context</param>
-    void createSwapchainImages(app::AppContext* aApp) {
-        // Get swapchain image handles with vkGetSwapchainImagesKHR
-        std::uint32_t numImages = 0;
-        vkGetSwapchainImagesKHR(aApp->logicalDevice, aApp->swapchain, &numImages, nullptr);
-        aApp->swapchainImages.resize(numImages);
-        vkGetSwapchainImagesKHR(aApp->logicalDevice, aApp->swapchain, &numImages, aApp->swapchainImages.data());
-    
-        // For each of the images in the swapchain
-        for (size_t i = 0; i < aApp->swapchainImages.size(); i++) {
-            // Create a VkImageView
-            VkImageViewCreateInfo imageViewInfo{};
-            imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            imageViewInfo.image = aApp->swapchainImages[i];
-            imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-            imageViewInfo.format = aApp->swapchainFormat;
-            imageViewInfo.components = VkComponentMapping{
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-                VK_COMPONENT_SWIZZLE_IDENTITY,
-                VK_COMPONENT_SWIZZLE_IDENTITY
-            };
-            imageViewInfo.subresourceRange = VkImageSubresourceRange{
-                VK_IMAGE_ASPECT_COLOR_BIT,
-                0, 1,
-                0, 1
-            };
-
-            VkImageView imageView;
-            if (vkCreateImageView(aApp->logicalDevice, &imageViewInfo, nullptr, &imageView) != VK_SUCCESS) {
-                throw std::runtime_error("Couldn't make an image view for the swapchain images");
-            }
-
-            aApp->swapchainImageViews.emplace_back(imageView);
-        }
-    
     }
 }

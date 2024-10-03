@@ -13,6 +13,7 @@
 #include <unordered_set>
 #include <string>
 #include <optional>
+#include <cassert>
 
 #include "glm.hpp"
 #include <gtx/transform.hpp>
@@ -183,7 +184,7 @@ namespace {
     /// <param name="layout">Descriptor set layout</param>
     /// <param name="imageView">The VkImage view</param>
     /// <param name="sampler">The sampler to be used</param>
-    /// <returns></returns>
+    /// <returns>Image descriptor set</returns>
     VkDescriptorSet createImageDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout,
         VkImageView& imageView, VkSampler& sampler);
 
@@ -194,6 +195,12 @@ namespace {
     /// <param name="screenAspect">The aspect value of the swapchain</param>
     /// <param name="cameraInfo">The camera info struct defining location and view</param>
     void updateWorldUniforms(WorldView& worldUniform, float screenAspect, CameraInfo& cameraInfo);
+
+    /// <summary>
+    /// Recreates the swapchain
+    /// </summary>
+    /// <param name="app">Application context</param>
+    void recreateSwapchain(app::AppContext& app);
 
     /// <summary>
     /// Records the rendering information and sets up the draw calls
@@ -234,13 +241,16 @@ namespace {
     void submitCommands(app::AppContext app, VkCommandBuffer commandBuffer, VkSemaphore wait, 
         VkSemaphore signal, VkFence fence);
 
+    
+    
     /// <summary>
     /// Presents the rendering to screen
     /// </summary>
     /// <param name="app">Application context</param>
     /// <param name="finishedSemaphore">Signal semaphore from submission</param>
     /// <param name="swapchainIndex">Swapchain image index</param>
-    void presentToScreen(app::AppContext app, VkSemaphore finishedSemaphore, std::uint32_t swapchainIndex);
+    /// <returns>True if swapchain needs resizing</returns>
+    bool presentToScreen(app::AppContext app, VkSemaphore finishedSemaphore, std::uint32_t swapchainIndex);
 
 }
 
@@ -372,27 +382,101 @@ int main() {
         VkSemaphore imageIsReady = utility::createSemaphore(application, 0);
         VkSemaphore renderHasFinished = utility::createSemaphore(application, 0);
 
+        bool resizeWindow = false;
+
         // Main render loop
         while (!glfwWindowShouldClose(application.window)) {
+            // Check for input events
             glfwPollEvents();
+
+            // Has the window been resized and if so resize the swapchain
+            if (resizeWindow) {
+                std::cout << "Changing" << std::endl;
+                // Remember the old format and size of the swapchain
+                VkFormat oldFormat = application.swapchainFormat;
+                VkExtent2D oldExtent = application.swapchainExtent;
+
+                // Remake the swapchain
+                recreateSwapchain(application);
+
+                // If format has changed the render pass needs remaking before framebuffers
+                if (application.swapchainFormat != oldFormat) {
+                    // Clean up old render pass
+                    vkDestroyRenderPass(application.logicalDevice, renderPass, nullptr);
+                    // Remake the render pass
+                    renderPass = createRenderPass(application);
+                }
+
+                // Destroy the old framebuffers
+                for (size_t i = 0; i < swapchainFramebuffers.size(); i++) {
+                    vkDestroyFramebuffer(application.logicalDevice, swapchainFramebuffers[i], nullptr);
+                }
+                swapchainFramebuffers.clear();
+
+                // Remake the depth buffer if size has changed
+                if (application.swapchainExtent.height != oldExtent.height ||
+                    application.swapchainExtent.width != oldExtent.width) {
+                    // Clean up old depth buffer
+                    vmaDestroyImage(allocator, depthBuffer.image, depthBuffer.allocation);
+                    vkDestroyImageView(application.logicalDevice, depthBuffer.imageView, nullptr);
+                    // Remake
+                    depthBuffer = utility::createImageSet(application, allocator, VK_FORMAT_D32_SFLOAT,
+                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+                }
+                
+                // Remake the framebuffers
+                for (size_t i = 0; i < application.swapchainImageViews.size(); i++) {
+                    // Get the attatchments
+                    std::vector<VkImageView> swapchainAttatchments;
+                    swapchainAttatchments.emplace_back(application.swapchainImageViews[i]);
+                    swapchainAttatchments.emplace_back(depthBuffer.imageView);
+
+                    // Create the framebuffer
+                    swapchainFramebuffers.emplace_back(createFramebuffer(application, renderPass, swapchainAttatchments));
+                }
+
+                // If size has changed, the pipelines need remaking
+                if (application.swapchainExtent.height != oldExtent.height || 
+                    application.swapchainExtent.width != oldExtent.width) {
+                    // Clean up old pipeline
+                    vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
+                    // Remake pipeline
+                    pipeline = createPipeline(application, pipelineLayout, renderPass,
+                        vertexShader, fragmentShader);
+                }
+
+                // Reset the resized window bool
+                resizeWindow = false;
+
+                // Skip to the next frame
+                continue;
+
+            }
 
             // Get the next image in the swapchain to use
             std::uint32_t nextImageIndex = 0;
-            auto const res = vkAcquireNextImageKHR(application.logicalDevice, application.swapchain,
+            auto const nextImageSuccess = vkAcquireNextImageKHR(application.logicalDevice, application.swapchain,
                 std::numeric_limits<std::uint64_t>::max(), imageIsReady, VK_NULL_HANDLE, 
                 &nextImageIndex);
 
-            if (res != VK_SUCCESS) {
+            // Check to see if a deadlock has occured
+            if (VK_SUBOPTIMAL_KHR == nextImageSuccess || VK_ERROR_OUT_OF_DATE_KHR == nextImageSuccess) {
+                resizeWindow = true;
+                continue;
+            }
+            if (nextImageSuccess != VK_SUCCESS) {
                 throw std::runtime_error("Failed to get next swapchain image");
             }
 
             // Wait for the command buffer
-            if (vkWaitForFences(application.logicalDevice, 1, &fences[nextImageIndex], VK_TRUE, std::numeric_limits<std::uint64_t>::max())) {
+            if (vkWaitForFences(application.logicalDevice, 1, &fences[nextImageIndex], VK_TRUE, std::numeric_limits<std::uint64_t>::max()) != VK_SUCCESS) {
                 throw std::runtime_error("Fence buffer timed out.");
             }
             // Reset the fence for the next iteration
-            vkResetFences(application.logicalDevice, 1, &fences[nextImageIndex]);
-
+            if (vkResetFences(application.logicalDevice, 1, &fences[nextImageIndex]) != VK_SUCCESS) {
+                throw std::runtime_error("Fence buffer couldnt be reset.");
+            }
+            
             // Update the world view uniform
             WorldView worldViewUniform;
             float screenAspect = float(application.swapchainExtent.width) / float(application.swapchainExtent.height);
@@ -405,6 +489,7 @@ int main() {
 
             // Get the set of offsets
             std::vector<VkDeviceSize> meshOffsets = {0, 0};
+
 
             // Record commands
             recordCommands(
@@ -426,12 +511,12 @@ int main() {
             submitCommands(application, commandBuffers[nextImageIndex], imageIsReady, renderHasFinished, fences[nextImageIndex]);
 
             // Wait for commands to be submitted
-            if (vkWaitForFences(application.logicalDevice, 1, &fences[nextImageIndex], VK_TRUE, std::numeric_limits<std::uint64_t>::max())) {
+            if (vkWaitForFences(application.logicalDevice, 1, &fences[nextImageIndex], VK_TRUE, std::numeric_limits<std::uint64_t>::max()) != VK_SUCCESS) {
                 throw std::runtime_error("Fence buffer timed out.");
             }
 
             // Present the image
-            presentToScreen(application, renderHasFinished, nextImageIndex);
+            resizeWindow = presentToScreen(application, renderHasFinished, nextImageIndex);
 
         }
 
@@ -1046,6 +1131,28 @@ namespace {
         worldUniform.projectionCameraMatrix = worldUniform.projectionMatrix * worldUniform.cameraMatrix;
     }
 
+    void recreateSwapchain(app::AppContext& app) {
+        // Wait for the device to idle
+        vkDeviceWaitIdle(app.logicalDevice);
+
+        // Clear the old swapchain image views
+        // Destroy swapchain image views
+        for (size_t i = 0; i < app.swapchainImageViews.size(); i++) {
+            vkDestroyImageView(app.logicalDevice, app.swapchainImageViews[i], nullptr);
+        }
+        app.swapchainImages.clear();
+        app.swapchainImageViews.clear();
+
+        // Destroy old swapchain
+        vkDestroySwapchainKHR(app.logicalDevice, app.swapchain, nullptr);
+
+        // Recreate the swapchain
+        app::swapchainSetup(&app);
+
+        // Recreate the swapchain images
+        app::createSwapchainImages(&app);
+    }
+
     void recordCommands(
         VkCommandBuffer commandBuffer,                              // Command buffer
         VkBuffer worldUniformBuffer, WorldView worldUniform,        // World Uniform
@@ -1160,7 +1267,7 @@ namespace {
         return;
     }
 
-    void presentToScreen(app::AppContext app, VkSemaphore finishedSemaphore, std::uint32_t swapchainIndex) {
+    bool presentToScreen(app::AppContext app, VkSemaphore finishedSemaphore, std::uint32_t swapchainIndex) {
         // Set up the presentation info
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1172,10 +1279,15 @@ namespace {
         presentInfo.pResults = nullptr;
 
         // Present
-        if (vkQueuePresentKHR(app.presentQueue, &presentInfo) != VK_SUCCESS) {
+        VkResult result = vkQueuePresentKHR(app.presentQueue, &presentInfo);
+            
+        if (result == VK_SUBOPTIMAL_KHR || result == VK_ERROR_OUT_OF_DATE_KHR) {
+            return true;
+        }
+        else if (result != VK_SUCCESS) {
             throw std::runtime_error("Failed to present the swapchain.");
         }
 
-        return;
+        return false;
     }
 }

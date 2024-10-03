@@ -47,6 +47,22 @@ namespace app
 		void cleanup();
 	};
 
+	/// <summary>
+	/// Sets up the vulkan application
+	/// </summary>
+	/// <returns>The application context / settings</returns>
 	AppContext setup();
+
+	/// <summary>
+	/// Creates the swapchain for the application
+	/// </summary>
+	/// <param name="aApp">The application context</param>
+	void swapchainSetup(app::AppContext* aApp);
+
+	/// <summary>
+	/// Creates the swapchain images for the application's swapchain
+	/// </summary>
+	/// <param name="aApp">The application context</param>
+	void createSwapchainImages(app::AppContext* aApp);
 
 }

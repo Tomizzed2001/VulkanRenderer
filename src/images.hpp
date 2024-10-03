@@ -30,7 +30,14 @@ namespace utility {
 	/// <returns>Class containing image, image view and allocation</returns>
 	ImageSet createImageSet(app::AppContext& app, VmaAllocator& allocator, VkFormat format, VkImageUsageFlags usageFlags, VkImageAspectFlagBits aspectFlagBits);
 
-	
+	/// <summary>
+	/// Creates an image texture set given a compressed dds file
+	/// </summary>
+	/// <param name="app">Application context</param>
+	/// <param name="filePath">Path to the .dds file</param>
+	/// <param name="allocator">Memory allocator</param>
+	/// <param name="commandPool">Command pool</param>
+	/// <returns></returns>
 	ImageSet createDDSTextureImageSet(app::AppContext& app, char const* filePath, 
 		VmaAllocator& allocator, VkCommandPool commandPool);
 }

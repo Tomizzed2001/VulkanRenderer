@@ -17,7 +17,7 @@ namespace model {
 	struct Mesh {
 		// Vertices
 		utility::BufferSet vertexPositions;
-		utility::BufferSet vertexColours;
+		utility::BufferSet vertexUVs;
 		utility::BufferSet indices;
 
 		std::uint32_t numberOfVertices;
@@ -30,11 +30,11 @@ namespace model {
 	/// <param name="app">Application context</param>
 	/// <param name="allocator">Vulkan memory allocator</param>
 	/// <param name="vPositions">Vertex positions</param>
-	/// <param name="vColours">Vertex colours</param>
+	/// <param name="vTextureCoords">Vertex texture coords</param>
 	/// <returns></returns>
 	Mesh createMesh(app::AppContext app, VmaAllocator& allocator, 
 		std::vector<glm::vec3>& vPositions, 
-		std::vector<glm::vec3>& vColours,
+		std::vector<glm::vec2>& vTextureCoords,
 		std::vector<std::uint32_t>& indices
 	);
 }

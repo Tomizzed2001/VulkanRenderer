@@ -3,12 +3,12 @@
 namespace model {
 	Mesh createMesh(app::AppContext app, VmaAllocator& allocator,
 		std::vector<glm::vec3>& vPositions,
-		std::vector<glm::vec3>& vColours,
+		std::vector<glm::vec2>& vTextureCoords,
 		std::vector<std::uint32_t>& indices
 	){
 		// Size of the input data in bytes (use long long since the number can be very large)
 		unsigned long long sizeOfPositions = vPositions.size() * sizeof(glm::vec3);
-		unsigned long long sizeOfColours = vColours.size() * sizeof(glm::vec3);
+		unsigned long long sizeOfUVs = vTextureCoords.size() * sizeof(glm::vec2);
 		unsigned long long sizeOfIndices = indices.size() * sizeof(std::uint32_t);
 		
 		// Create the buffers on the GPU to hold the data
@@ -18,9 +18,9 @@ namespace model {
 			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
 		);
-		utility::BufferSet colourBuffer = utility::createBuffer(
+		utility::BufferSet UVBuffer = utility::createBuffer(
 			allocator,
-			sizeOfColours,
+			sizeOfUVs,
 			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
 		);
@@ -38,9 +38,9 @@ namespace model {
 			VMA_MEMORY_USAGE_AUTO,
 			VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
 		);
-		utility::BufferSet colourStaging = utility::createBuffer(
+		utility::BufferSet UVStaging = utility::createBuffer(
 			allocator,
-			sizeOfColours,
+			sizeOfUVs,
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VMA_MEMORY_USAGE_AUTO,
 			VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
@@ -59,10 +59,10 @@ namespace model {
 		std::memcpy(positionMemory, vPositions.data(), sizeOfPositions);
 		vmaUnmapMemory(allocator, positionStaging.allocation);
 
-		void* colourMemory = nullptr;
-		vmaMapMemory(allocator, colourStaging.allocation, &colourMemory);
-		std::memcpy(colourMemory, vColours.data(), sizeOfColours);
-		vmaUnmapMemory(allocator, colourStaging.allocation);
+		void* UVMemory = nullptr;
+		vmaMapMemory(allocator, UVStaging.allocation, &UVMemory);
+		std::memcpy(UVMemory, vTextureCoords.data(), sizeOfUVs);
+		vmaUnmapMemory(allocator, UVStaging.allocation);
 
 		void* indexMemory = nullptr;
 		vmaMapMemory(allocator, indexStaging.allocation, &indexMemory);
@@ -90,10 +90,10 @@ namespace model {
 			commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
 		);
 
-		VkBufferCopy colourCopy{};
-		colourCopy.size = sizeOfColours;
-		vkCmdCopyBuffer(commandBuffer, colourStaging.buffer, colourBuffer.buffer, 1, &colourCopy);
-		utility::createBufferBarrier(colourBuffer.buffer, VK_WHOLE_SIZE,
+		VkBufferCopy UVCopy{};
+		UVCopy.size = sizeOfUVs;
+		vkCmdCopyBuffer(commandBuffer, UVStaging.buffer, UVBuffer.buffer, 1, &UVCopy);
+		utility::createBufferBarrier(UVBuffer.buffer, VK_WHOLE_SIZE,
 			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
 			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
 			commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
@@ -133,7 +133,7 @@ namespace model {
 		Mesh outputMesh;
 
 		outputMesh.vertexPositions = std::move(positionBuffer);
-		outputMesh.vertexColours = std::move(colourBuffer);
+		outputMesh.vertexUVs = std::move(UVBuffer);
 		outputMesh.indices = std::move(indexBuffer);
 		outputMesh.numberOfVertices = uint32_t(vPositions.size());
 		outputMesh.numberOfIndices = uint32_t(indices.size());

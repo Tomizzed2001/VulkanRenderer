@@ -64,7 +64,7 @@ namespace utility {
 		return BufferSet(allocator, buffer, allocation);
 	}
 
-	void createBarrier(
+	void createBufferBarrier(
 		VkBuffer buffer, 
 		VkDeviceSize sizeOfBuffer, 
 		VkAccessFlags srcAccessMask,
@@ -92,6 +92,39 @@ namespace utility {
 			0, nullptr				// Image  barriers
 		);
 	}
+
+	void createImageBarrier(
+		VkImage image,
+		VkImageLayout srcLayout, 
+		VkImageLayout dstLayout,
+		VkAccessFlags srcAccessMask,
+		VkAccessFlags dstAccessMask,
+		std::uint32_t srcQueueFamilyIndex,
+		std::uint32_t dstQueueFamilyIndex,
+		std::uint32_t mipmapLevels,
+		VkCommandBuffer commandBuffer,
+		VkPipelineStageFlags aSrcStageFlags,
+		VkPipelineStageFlags aDstStageFlags
+	) {
+		VkImageMemoryBarrier imageBarrier{};
+		imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		imageBarrier.image = image;
+		imageBarrier.oldLayout = srcLayout;
+		imageBarrier.newLayout = dstLayout;
+		imageBarrier.srcAccessMask = srcAccessMask;
+		imageBarrier.dstAccessMask = dstAccessMask;
+		imageBarrier.srcQueueFamilyIndex = srcQueueFamilyIndex;
+		imageBarrier.dstQueueFamilyIndex = dstQueueFamilyIndex;
+		imageBarrier.subresourceRange = VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, mipmapLevels, 0, 1 };
+
+		vkCmdPipelineBarrier(
+			commandBuffer, aSrcStageFlags, aDstStageFlags, 0, // Buffer details
+			0, nullptr,				// Memory barriers
+			0, nullptr,				// Buffer barriers
+			1, &imageBarrier		// Image  barriers
+		);
+	}
+
 
 	VkCommandPool createCommandPool(app::AppContext& app, VkCommandPoolCreateFlags flags) {
 		// Set the required information for the command pool

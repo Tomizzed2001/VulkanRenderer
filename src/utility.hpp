@@ -85,13 +85,40 @@ namespace utility {
 	/// <param name="commandBuffer">Command buffer to hold</param>
 	/// <param name="aSrcStageFlags">Current staging flag(s)</param>
 	/// <param name="aDstStageFlags">Future staging flag(s)</param>
-	void createBarrier(
+	void createBufferBarrier(
 		VkBuffer buffer,
 		VkDeviceSize sizeOfBuffer,
 		VkAccessFlags srcAccessMask,
 		VkAccessFlags dstAccessMask,
 		std::uint32_t srcQueueFamilyIndex,
 		std::uint32_t dstQueueFamilyIndex,
+		VkCommandBuffer commandBuffer,
+		VkPipelineStageFlags aSrcStageFlags,
+		VkPipelineStageFlags aDstStageFlags
+	);
+
+	/// <summary>
+	/// Creates an image barrier in the memory to wait for any GPU data transfers to complete
+	/// </summary>
+	/// <param name="buffer">The buffer being transferred</param>
+	/// <param name="sizeOfBuffer">The size of the buffer being transferred</param>
+	/// <param name="srcAccessMask">Current access flag(s)</param>
+	/// <param name="dstAccessMask">Future access flag(s)</param>
+	/// <param name="srcQueueFamilyIndex">Current queue flag(s)</param>
+	/// <param name="dstQueueFamilyIndex">Future queue flag(s)</param>
+	/// <param name="mipmapLevels">Number of mipmap levels</param>
+	/// <param name="commandBuffer">Command buffer to hold</param>
+	/// <param name="aSrcStageFlags">Current staging flag(s)</param>
+	/// <param name="aDstStageFlags">Future staging flag(s)</param>
+	void createImageBarrier(
+		VkImage image,
+		VkImageLayout srcLayout,
+		VkImageLayout dstLayout,
+		VkAccessFlags srcAccessMask,
+		VkAccessFlags dstAccessMask,
+		std::uint32_t srcQueueFamilyIndex,
+		std::uint32_t dstQueueFamilyIndex,
+		std::uint32_t mipmapLevels,
 		VkCommandBuffer commandBuffer,
 		VkPipelineStageFlags aSrcStageFlags,
 		VkPipelineStageFlags aDstStageFlags

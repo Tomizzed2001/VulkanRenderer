@@ -309,6 +309,9 @@ int main() {
             counter++;
         }
 
+        // Load textures
+        utility::ImageSet texture = utility::createDDSTextureImageSet(application, "Texture.dds", allocator, commandPool);
+
         // Create descriptor pool
         VkDescriptorPool descriptorPool = createDescriptorPool(application);
 
@@ -415,6 +418,8 @@ int main() {
         }
         vmaDestroyImage(allocator, depthBuffer.image, depthBuffer.allocation);
         vkDestroyImageView(application.logicalDevice, depthBuffer.imageView, nullptr);
+        vmaDestroyImage(allocator, texture.image, texture.allocation);
+        vkDestroyImageView(application.logicalDevice, texture.imageView, nullptr);
         vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
         vkDestroyShaderModule(application.logicalDevice, vertexShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, fragmentShader, nullptr);
@@ -928,7 +933,7 @@ namespace {
 
         // Upload any uniforms that may have been updated
         // Re-assign the usage of the buffer
-        utility::createBarrier(worldUniformBuffer, VK_WHOLE_SIZE,
+        utility::createBufferBarrier(worldUniformBuffer, VK_WHOLE_SIZE,
             VK_ACCESS_UNIFORM_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
             VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
             commandBuffer, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT
@@ -936,7 +941,7 @@ namespace {
         // Update
         vkCmdUpdateBuffer(commandBuffer, worldUniformBuffer, 0, sizeof(WorldView), &worldUniform);
         // Re-assign the usage of the buffer back to its original state
-        utility::createBarrier(worldUniformBuffer, VK_WHOLE_SIZE,
+        utility::createBufferBarrier(worldUniformBuffer, VK_WHOLE_SIZE,
             VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_UNIFORM_READ_BIT,
             VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
             commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT

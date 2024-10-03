@@ -5,6 +5,7 @@
 #include <vk_mem_alloc.h>
 
 #include "setup.hpp"
+#include "utility.hpp"
 
 namespace utility {
 	/// <summary>
@@ -29,5 +30,7 @@ namespace utility {
 	/// <returns>Class containing image, image view and allocation</returns>
 	ImageSet createImageSet(app::AppContext& app, VmaAllocator& allocator, VkFormat format, VkImageUsageFlags usageFlags, VkImageAspectFlagBits aspectFlagBits);
 
-
+	
+	ImageSet createDDSTextureImageSet(app::AppContext& app, char const* filePath, 
+		VmaAllocator& allocator, VkCommandPool commandPool);
 }

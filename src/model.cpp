@@ -69,9 +69,6 @@ namespace model {
 		std::memcpy(indexMemory, indices.data(), sizeOfIndices);
 		vmaUnmapMemory(allocator, indexStaging.allocation);
 
-		// Use a fence to ensure that transfers are complete before moving on
-		VkFence mappingComplete = utility::createFence(app);
-
 		// Create a command buffer to record the data into
 		VkCommandPool commandPool = utility::createCommandPool(app, 0);
 		VkCommandBuffer commandBuffer = utility::createCommandBuffer(app, commandPool);
@@ -87,7 +84,7 @@ namespace model {
 		VkBufferCopy positionCopy{};
 		positionCopy.size = sizeOfPositions;
 		vkCmdCopyBuffer(commandBuffer, positionStaging.buffer, positionBuffer.buffer, 1, &positionCopy);
-		utility::createBarrier(positionBuffer.buffer, VK_WHOLE_SIZE,
+		utility::createBufferBarrier(positionBuffer.buffer, VK_WHOLE_SIZE,
 			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
 			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
 			commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
@@ -96,7 +93,7 @@ namespace model {
 		VkBufferCopy colourCopy{};
 		colourCopy.size = sizeOfColours;
 		vkCmdCopyBuffer(commandBuffer, colourStaging.buffer, colourBuffer.buffer, 1, &colourCopy);
-		utility::createBarrier(colourBuffer.buffer, VK_WHOLE_SIZE,
+		utility::createBufferBarrier(colourBuffer.buffer, VK_WHOLE_SIZE,
 			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
 			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
 			commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
@@ -105,7 +102,7 @@ namespace model {
 		VkBufferCopy indexCopy{};
 		indexCopy.size = sizeOfIndices;
 		vkCmdCopyBuffer(commandBuffer, indexStaging.buffer, indexBuffer.buffer, 1, &indexCopy);
-		utility::createBarrier(indexBuffer.buffer, VK_WHOLE_SIZE,
+		utility::createBufferBarrier(indexBuffer.buffer, VK_WHOLE_SIZE,
 			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
 			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
 			commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
@@ -116,17 +113,20 @@ namespace model {
 			throw std::runtime_error("Failed to end command buffer recording.");
 		}
 
+		// Use a fence to ensure that transfers are complete before moving on
+		VkFence submitComplete = utility::createFence(app);
+
 		// Submit the recorded commands for execution
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = 1;
 		submitInfo.pCommandBuffers = &commandBuffer;
-		if (vkQueueSubmit(app.graphicsQueue, 1, &submitInfo, mappingComplete)) {
+		if (vkQueueSubmit(app.graphicsQueue, 1, &submitInfo, submitComplete)) {
 			throw std::runtime_error("Failed to submit recorded commands.");
 		}
 
 		// Wait for the fence before clean up
-		if (vkWaitForFences(app.logicalDevice, 1, &mappingComplete, VK_TRUE, std::numeric_limits<std::uint64_t>::max())) {
+		if (vkWaitForFences(app.logicalDevice, 1, &submitComplete, VK_TRUE, std::numeric_limits<std::uint64_t>::max())) {
 			throw std::runtime_error("Fence failed to return as complete.");
 		}
 
@@ -139,8 +139,9 @@ namespace model {
 		outputMesh.numberOfIndices = uint32_t(indices.size());
 		
 		// Clean up before returning
+		vkFreeCommandBuffers(app.logicalDevice, commandPool, 1, &commandBuffer);
 		vkDestroyCommandPool(app.logicalDevice, commandPool, nullptr);
-		vkDestroyFence(app.logicalDevice, mappingComplete, nullptr);
+		vkDestroyFence(app.logicalDevice, submitComplete, nullptr);
 
 		return outputMesh;
 

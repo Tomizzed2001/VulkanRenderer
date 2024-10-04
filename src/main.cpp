@@ -225,9 +225,10 @@ namespace {
         VkRect2D renderArea,
         VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
-        VkDescriptorSet textureDescriptorSet,                       // Texture descriptors
-        std::vector<model::Mesh>& mesh,                             // Mesh data
-        std::vector<VkDeviceSize>& vertexOffsets                    // Per vertex data
+        std::vector<VkDescriptorSet>& textureDescriptorSets,        // Texture descriptors
+        std::vector<model::Mesh>& meshes,                           // Mesh data
+        std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
+        std::vector<fbx::Material>& materials                       // Material data
     );
     
     /// <summary>
@@ -326,27 +327,69 @@ int main() {
         VkCommandPool commandPool = utility::createCommandPool(application, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
         // Load an FBX model
-        fbx::Scene fbxScene = fbx::loadFBXFile("Scene.fbx");
+        fbx::Scene fbxScene = fbx::loadFBXFile("SunTemple/SunTemple.fbx");
 
-        int counter = 0;
-        std::vector<glm::vec3> colours;
-        colours.emplace_back(glm::vec3(0.0, 0.6, 0.95));
-        colours.emplace_back(glm::vec3(0.95, 0.0, 0.05));
+        /*
+        // Fake mesh
+        std::vector<model::Mesh> meshes;
+        std::vector<glm::vec3> positions;
+        //positions.emplace_back(glm::vec3(-10.5f, 0.f, -10.5f));
+        //positions.emplace_back(glm::vec3(10.5f, 0.f, -10.5f));
+        //positions.emplace_back(glm::vec3(10.5f, 0.f, 10.5f));
+        //positions.emplace_back(glm::vec3(-10.5f, 0.f, 10.5f));
+        positions.emplace_back(glm::vec3(-10.f, 0.f, 10.f));
+        positions.emplace_back(glm::vec3(10.f, 0.f, 10.f));
+        positions.emplace_back(glm::vec3(-10.f, 0.f, -10.f));
+        positions.emplace_back(glm::vec3(10.f, 0.f, -10.f));
 
+
+        std::vector<glm::vec2> uvs;
+        uvs.emplace_back(glm::vec2(0.f, 0.f));  // 3
+        uvs.emplace_back(glm::vec2(1.f, 0.f));  // 1
+        uvs.emplace_back(glm::vec2(0.f, 1.f));  // 2
+        uvs.emplace_back(glm::vec2(1.f, 1.f));  // 4
+
+        std::vector<std::uint32_t> indices;
+        indices.emplace_back(1);
+        indices.emplace_back(2);
+        indices.emplace_back(0);
+
+        indices.emplace_back(1);
+        indices.emplace_back(3);
+        indices.emplace_back(2);
+
+
+
+        meshes.emplace_back(model::createMesh(application, allocator,
+            positions, uvs, indices, 0));
+
+        */
         // Load all meshes from the fbx model
         std::vector<model::Mesh> meshes;
         for (fbx::Mesh mesh : fbxScene.meshes) {
-            std::vector<glm::vec3> fbxColours;
-            for (int i = 0; i < mesh.vertexPositions.size(); i++) {
-                fbxColours.emplace_back(colours[counter]);
-            }
-            meshes.emplace_back(model::createMesh(application, allocator, 
-                mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexIndices));
-            counter++;
+            std::cout << fbxScene.textures[fbxScene.materials[mesh.materialIndex].diffuseTextureID].filePath << std::endl;
+            meshes.emplace_back(model::createMesh(application, allocator,
+                mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexIndices, mesh.materialIndex));
         }
 
+        std::cout << "Num materials: " << fbxScene.materials.size() << std::endl;
+        std::cout << "Num textures: " << fbxScene.textures.size() << std::endl;
+
+        // Load all textures from the fbx model
+        std::vector<utility::ImageSet> textures;
+        /*
+        textures.emplace_back(utility::createDDSTextureImageSet(application, fbxScene.textures[21].filePath.c_str(), allocator, commandPool));
+        */
+        for (fbx::Texture texture : fbxScene.textures) {
+            //std::cout << "Loading: " << texture.filePath << std::endl;
+            textures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+        }
+
+        std::cout << "Num texture images: " << textures.size() << std::endl;
+        std::cout << "Finished loading textures" << std::endl;
+
         // Load textures
-        utility::ImageSet texture = utility::createDDSTextureImageSet(application, "Texture.dds", allocator, commandPool);
+        //utility::ImageSet texture = utility::createDDSTextureImageSet(application, "Texture.dds", allocator, commandPool);
 
         // Create a texture sampler
         VkSampler sampler = createTextureSampler(application);
@@ -362,9 +405,14 @@ int main() {
         // Create and initialise the world descriptor set
         VkDescriptorSet worldDescriptorSet = createBufferDescriptorSet(application, descriptorPool, worldDescriptorSetLayout, worldUniformBuffer.buffer);
 
-        // Create and initialise the texture descriptor set
-        VkDescriptorSet textureDescriptor = createImageDescriptorSet(application, descriptorPool,
-            materialDescriptorSetLayout, texture.imageView, sampler);
+        // Create and initialise the texture descriptor sets
+        std::vector<VkDescriptorSet> textureDescriptorSets;
+        for (size_t i = 0; i < textures.size(); i++) {
+            textureDescriptorSets.emplace_back(createImageDescriptorSet(application, descriptorPool,
+                materialDescriptorSetLayout, textures[i].imageView, sampler));
+        }
+
+        std::cout << "Finished loading texture descriptor sets" << std::endl;
 
         // Create the command buffers - one for each of the swapchain framebuffers
         std::vector<VkCommandBuffer> commandBuffers;
@@ -502,9 +550,10 @@ int main() {
                 pipeline,
                 pipelineLayout,
                 worldDescriptorSet,
-                textureDescriptor,
+                textureDescriptorSets,
                 meshes,
-                meshOffsets
+                meshOffsets,
+                fbxScene.materials
             );
 
             // Submit commands
@@ -524,13 +573,15 @@ int main() {
         vkDeviceWaitIdle(application.logicalDevice);
 
         // Clean up and close the application
-        vkDestroySampler(application.logicalDevice, sampler, nullptr);
+        // Destroy buffers
         worldUniformBuffer.~BufferSet();
         for (size_t i = 0; i < meshes.size(); i++) {
             meshes[i].vertexPositions.~BufferSet();
             meshes[i].vertexUVs.~BufferSet();
             meshes[i].indices.~BufferSet();
         }
+        
+        // Destroy command relatedd components
         vkDestroyDescriptorPool(application.logicalDevice, descriptorPool, nullptr);
         vkDestroySemaphore(application.logicalDevice, renderHasFinished, nullptr);
         vkDestroySemaphore(application.logicalDevice, imageIsReady, nullptr);
@@ -539,19 +590,35 @@ int main() {
             vkDestroyFramebuffer(application.logicalDevice, swapchainFramebuffers[i], nullptr);
             vkDestroyFence(application.logicalDevice, fences[i], nullptr);
         }
+
+        // Destroy image related components
+        vkDestroySampler(application.logicalDevice, sampler, nullptr);
         vmaDestroyImage(allocator, depthBuffer.image, depthBuffer.allocation);
         vkDestroyImageView(application.logicalDevice, depthBuffer.imageView, nullptr);
-        vmaDestroyImage(allocator, texture.image, texture.allocation);
-        vkDestroyImageView(application.logicalDevice, texture.imageView, nullptr);
+        for (size_t i = 0; i < textures.size(); i++) {
+            vmaDestroyImage(allocator, textures[i].image, textures[i].allocation);
+            vkDestroyImageView(application.logicalDevice, textures[i].imageView, nullptr);
+        }
+
+        // Destroy pipeline related components
         vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
         vkDestroyShaderModule(application.logicalDevice, vertexShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, fragmentShader, nullptr);
         vkDestroyPipelineLayout(application.logicalDevice, pipelineLayout, nullptr);
+
+        // Destroy descriptor set layouts
         vkDestroyDescriptorSetLayout(application.logicalDevice, materialDescriptorSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, worldDescriptorSetLayout, nullptr);
+
+        // Destroy Renderpass
         vkDestroyRenderPass(application.logicalDevice, renderPass, nullptr);
+        
+        // Destroy memory
         vmaDestroyAllocator(allocator);
+
+        // Destroy the application
         application.cleanup();
+
         return 0;
     }
     catch (const std::exception& e) {
@@ -877,7 +944,7 @@ namespace {
         vertexInputs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
         //Colours 3 floats
         vertexInputs[1].binding = 1;
-        vertexInputs[1].stride = sizeof(float) * 3;
+        vertexInputs[1].stride = sizeof(float) * 2;
         vertexInputs[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
         // Attributes of the above inputs
@@ -890,7 +957,7 @@ namespace {
         // Colours
         vertexAttributes[1].binding = 1;
         vertexAttributes[1].location = 1;
-        vertexAttributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+        vertexAttributes[1].format = VK_FORMAT_R32G32_SFLOAT;
         vertexAttributes[1].offset = 0;
 
         // Vertex shader info using the above descriptions
@@ -1021,6 +1088,8 @@ namespace {
         samplerInfo.minLod = 0.f;
         samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
         samplerInfo.mipLodBias = 0.f;
+        samplerInfo.anisotropyEnable = VK_TRUE;
+        samplerInfo.maxAnisotropy = 16;
 
         VkSampler sampler = VK_NULL_HANDLE;
         if (vkCreateSampler(app.logicalDevice, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
@@ -1160,10 +1229,12 @@ namespace {
         VkRect2D renderArea,
         VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
-        VkDescriptorSet textureDescriptorSet,                       // Texture descriptors
+        std::vector<VkDescriptorSet>& textureDescriptorSets,        // Texture descriptors
         std::vector<model::Mesh>& meshes,                           // Mesh data
-        std::vector<VkDeviceSize>& vertexOffsets                    // Per vertex data
+        std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
+        std::vector<fbx::Material>& materials                       // Material data
     ) {
+
         // Set up and start the command buffer recording
         VkCommandBufferBeginInfo recordInfo{};
         recordInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1214,10 +1285,13 @@ namespace {
 
         // Bind the uniforms to the pipeline
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &worldDescriptorSet, 0, nullptr);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &textureDescriptorSet, 0, nullptr);
 
         // Draw each separate mesh to screen
         for (size_t i = 0; i < meshes.size(); i++) {
+            // Bind the correct texture
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &textureDescriptorSets[materials[meshes[i].materialID].diffuseTextureID], 0, nullptr);
+            //vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &textureDescriptorSets[0], 0, nullptr);
+
             // Bind the per vertex buffers
             VkBuffer buffers[2] = { meshes[i].vertexPositions.buffer, meshes[i].vertexUVs.buffer};
             VkDeviceSize offsets[2]{};

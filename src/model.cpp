@@ -4,7 +4,8 @@ namespace model {
 	Mesh createMesh(app::AppContext app, VmaAllocator& allocator,
 		std::vector<glm::vec3>& vPositions,
 		std::vector<glm::vec2>& vTextureCoords,
-		std::vector<std::uint32_t>& indices
+		std::vector<std::uint32_t>& indices,
+		std::uint32_t materialID
 	){
 		// Size of the input data in bytes (use long long since the number can be very large)
 		unsigned long long sizeOfPositions = vPositions.size() * sizeof(glm::vec3);
@@ -137,6 +138,7 @@ namespace model {
 		outputMesh.indices = std::move(indexBuffer);
 		outputMesh.numberOfVertices = uint32_t(vPositions.size());
 		outputMesh.numberOfIndices = uint32_t(indices.size());
+		outputMesh.materialID = materialID;
 		
 		// Clean up before returning
 		vkFreeCommandBuffers(app.logicalDevice, commandPool, 1, &commandBuffer);

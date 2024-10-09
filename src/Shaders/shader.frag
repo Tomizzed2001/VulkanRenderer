@@ -9,6 +9,6 @@ layout (location = 0) out vec4 oColor;
 
 void main()
 {
-	oColor = vec4(texture(uTexColor, v2fTexCoord).rgb, 1.f);
-	//oColor = vec4(v2fTexCoord.x , v2fTexCoord.y, 0, 1.f);
+	oColor = vec4(texture(uTexColor, vec2(v2fTexCoord.x, v2fTexCoord.y)).rgb, 1.f);
+	//oColor = vec4(v2fTexCoord.x, v2fTexCoord.y, 0, 1);
 }

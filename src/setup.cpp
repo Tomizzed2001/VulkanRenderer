@@ -575,6 +575,8 @@ namespace {
             features.samplerAnisotropy = VK_TRUE;
         }
 
+        features.fillModeNonSolid = VK_TRUE;
+
         // Set up the device info prior to creation
         VkDeviceCreateInfo deviceInfo{};
         deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

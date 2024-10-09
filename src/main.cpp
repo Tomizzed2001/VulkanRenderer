@@ -327,69 +327,25 @@ int main() {
         VkCommandPool commandPool = utility::createCommandPool(application, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
         // Load an FBX model
+        //fbx::Scene fbxScene = fbx::loadFBXFile("Bistro/BistroExterior.fbx");
         fbx::Scene fbxScene = fbx::loadFBXFile("SunTemple/SunTemple.fbx");
 
-        /*
-        // Fake mesh
-        std::vector<model::Mesh> meshes;
-        std::vector<glm::vec3> positions;
-        //positions.emplace_back(glm::vec3(-10.5f, 0.f, -10.5f));
-        //positions.emplace_back(glm::vec3(10.5f, 0.f, -10.5f));
-        //positions.emplace_back(glm::vec3(10.5f, 0.f, 10.5f));
-        //positions.emplace_back(glm::vec3(-10.5f, 0.f, 10.5f));
-        positions.emplace_back(glm::vec3(-10.f, 0.f, 10.f));
-        positions.emplace_back(glm::vec3(10.f, 0.f, 10.f));
-        positions.emplace_back(glm::vec3(-10.f, 0.f, -10.f));
-        positions.emplace_back(glm::vec3(10.f, 0.f, -10.f));
-
-
-        std::vector<glm::vec2> uvs;
-        uvs.emplace_back(glm::vec2(0.f, 0.f));  // 3
-        uvs.emplace_back(glm::vec2(1.f, 0.f));  // 1
-        uvs.emplace_back(glm::vec2(0.f, 1.f));  // 2
-        uvs.emplace_back(glm::vec2(1.f, 1.f));  // 4
-
-        std::vector<std::uint32_t> indices;
-        indices.emplace_back(1);
-        indices.emplace_back(2);
-        indices.emplace_back(0);
-
-        indices.emplace_back(1);
-        indices.emplace_back(3);
-        indices.emplace_back(2);
-
-
-
-        meshes.emplace_back(model::createMesh(application, allocator,
-            positions, uvs, indices, 0));
-
-        */
         // Load all meshes from the fbx model
         std::vector<model::Mesh> meshes;
         for (fbx::Mesh mesh : fbxScene.meshes) {
-            std::cout << fbxScene.textures[fbxScene.materials[mesh.materialIndex].diffuseTextureID].filePath << std::endl;
             meshes.emplace_back(model::createMesh(application, allocator,
                 mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexIndices, mesh.materialIndex));
         }
 
+        std::cout << "Num meshes: " << fbxScene.meshes.size() << std::endl;
         std::cout << "Num materials: " << fbxScene.materials.size() << std::endl;
         std::cout << "Num textures: " << fbxScene.textures.size() << std::endl;
 
         // Load all textures from the fbx model
         std::vector<utility::ImageSet> textures;
-        /*
-        textures.emplace_back(utility::createDDSTextureImageSet(application, fbxScene.textures[21].filePath.c_str(), allocator, commandPool));
-        */
         for (fbx::Texture texture : fbxScene.textures) {
-            //std::cout << "Loading: " << texture.filePath << std::endl;
             textures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
         }
-
-        std::cout << "Num texture images: " << textures.size() << std::endl;
-        std::cout << "Finished loading textures" << std::endl;
-
-        // Load textures
-        //utility::ImageSet texture = utility::createDDSTextureImageSet(application, "Texture.dds", allocator, commandPool);
 
         // Create a texture sampler
         VkSampler sampler = createTextureSampler(application);
@@ -1290,7 +1246,6 @@ namespace {
         for (size_t i = 0; i < meshes.size(); i++) {
             // Bind the correct texture
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &textureDescriptorSets[materials[meshes[i].materialID].diffuseTextureID], 0, nullptr);
-            //vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &textureDescriptorSets[0], 0, nullptr);
 
             // Bind the per vertex buffers
             VkBuffer buffers[2] = { meshes[i].vertexPositions.buffer, meshes[i].vertexUVs.buffer};

@@ -19,7 +19,7 @@
 #pragma comment (lib, "C:\\Program Files\\Autodesk\\FBX\\FBX SDK\\2020.3.7\\lib\\x64\\release\\zlib-md.lib")
 #endif
 
-#define DEBUG_OUTPUTS true
+#define DEBUG_OUTPUTS false
 
 namespace fbx {
 
@@ -174,14 +174,18 @@ namespace fbx {
 
         // Get the number of triangles in the mesh and all the triangles
         int numTriangles = inMesh->GetPolygonCount();
+        //std::cout << "Triangles: " << numTriangles << std::endl;
 
         // Get the number of vertices and all vertices
         int numVertices = inMesh->GetControlPointsCount();
         FbxVector4* fbxVertices = inMesh->GetControlPoints();
+        //std::cout << "Vertices: " << numVertices << std::endl;
 
         // Get the number of indices and all indices
         int numIndices = inMesh->GetPolygonVertexCount();
         int* indices = inMesh->GetPolygonVertices();
+
+        //std::cout << "Indices: " << numIndices << std::endl;
 
         // Get the normals for the mesh
         FbxArray<FbxVector4> normals;
@@ -199,6 +203,8 @@ namespace fbx {
             throw std::runtime_error("Failed to gather mesh texture coordinates.");
         }
 
+        //std::cout << "UVs: " << uvs.Size() << std::endl;
+
         // Check for duplicate vertices and re-index them
         std::vector<int> seenIndex(numIndices, -1);
         std::unordered_map<glm::vec3, std::uint32_t> seenVertices;
@@ -206,6 +212,25 @@ namespace fbx {
         for (int i = 0; i < numIndices; i++) {  // For each index
             // Get the index
             int index = indices[i];
+
+            // Get the vertex position
+            glm::vec3 vertex = glm::vec4(fbxVertices[index][0], fbxVertices[index][1], fbxVertices[index][2], 1);
+
+            // Get the vertex normal
+            glm::vec3 normal = glm::vec4(normals[index][0], normals[index][1], normals[index][2], 1);
+
+            // Get the vertex texture co-ordinate
+            glm::vec2 uv = glm::vec2(uvs[i][0], uvs[i][1]);
+
+            // Add the new vertex position and normal
+            outMesh.vertexPositions.emplace_back(transform * glm::vec4(vertex, 1));
+            outMesh.vertexNormals.emplace_back(transform * glm::vec4(normal, 1));
+            outMesh.vertexTextureCoords.emplace_back(uv);
+
+            // Store the newly assigned index
+            outMesh.vertexIndices.emplace_back(i);
+
+            /*
             // If index has already been seen and re-indexed, use that one
             if (seenIndex[index] != -1) {
                 outMesh.vertexIndices.emplace_back(seenIndex[index]);
@@ -249,6 +274,8 @@ namespace fbx {
                     seenIndex[index] = newIndex;
                 }
             }
+            
+            */
         }
 
         // Calculate the per vertex tangents

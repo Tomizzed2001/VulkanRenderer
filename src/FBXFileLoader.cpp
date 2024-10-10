@@ -116,26 +116,35 @@ namespace fbx {
         transformMatrix[3] = translation;
 
         // Check for materials
-        uint32_t materialIndex = -1;
+        std::vector<uint32_t> materialIndices;
         if (node->GetMaterialCount() > 0) {
-            // Only get the first material for now and apply it to the entire mesh.
-            FbxSurfaceMaterial* material = node->GetMaterial(0);
-            // Check if the material data has already been made
-            for (size_t i = 0; i < outputScene.materials.size(); i++) {
-                if (outputScene.materials[i].materialName == material->GetName()) {
-                    materialIndex = i;
-                    break;
+            for (int i = 0; i < node->GetMaterialCount(); i++) {
+                // Reset material index
+                uint32_t materialIndex = -1;
+                
+                // Only get the first material for now and apply it to the entire mesh.
+                FbxSurfaceMaterial* material = node->GetMaterial(i);
+
+                // Check if the material data has already been made
+                for (size_t i = 0; i < outputScene.materials.size(); i++) {
+                    if (outputScene.materials[i].materialName == material->GetName()) {
+                        materialIndex = i;
+                        break;
+                    }
                 }
-            }
-            // If material has not been found create one for it
-            if (materialIndex == -1) {
-                outputScene.materials.emplace_back(createMaterialData(material, outputScene));
-                materialIndex = outputScene.materials.size() - 1;
-            }
 
-            if (DEBUG_OUTPUTS)
-                std::cout << "Material name: " << outputScene.materials[materialIndex].materialName << " Material index: " << materialIndex << std::endl;
+                // If material has not been found create one for it
+                if (materialIndex == -1) {
+                    outputScene.materials.emplace_back(createMaterialData(material, outputScene));
+                    materialIndex = outputScene.materials.size() - 1;
+                }
 
+                // Add to the material indices
+                materialIndices.emplace_back(materialIndex);
+
+                if (DEBUG_OUTPUTS)
+                    std::cout << "Material name: " << outputScene.materials[materialIndex].materialName << " Material index: " << materialIndex << std::endl;
+            }
         }
         else {
             if (DEBUG_OUTPUTS)
@@ -151,7 +160,7 @@ namespace fbx {
         }
         else {
             // Create the mesh data
-            outputScene.meshes.emplace_back(createMeshData(nodeMesh, materialIndex, transformMatrix));
+            outputScene.meshes.emplace_back(createMeshData(nodeMesh, materialIndices, transformMatrix));
         }
 
         // If there is no children do not recurse
@@ -166,11 +175,11 @@ namespace fbx {
         }
     }
 
-    Mesh createMeshData(FbxMesh* inMesh, uint32_t materialIndex, glm::mat4 transform) {
+    Mesh createMeshData(FbxMesh* inMesh, std::vector<uint32_t>& materialIndices, glm::mat4 transform) {
         Mesh outMesh;
 
-        // Add the material index to the mesh data structure
-        outMesh.materialIndex = materialIndex;
+        // Set main material index
+        outMesh.materialIndex = materialIndices[0];
 
         // Get the number of triangles in the mesh and all the triangles
         int numTriangles = inMesh->GetPolygonCount();
@@ -280,6 +289,16 @@ namespace fbx {
 
         // Calculate the per vertex tangents
         outMesh.vertexTangents = calculateTangents(outMesh.vertexIndices, outMesh.vertexPositions, outMesh.vertexTextureCoords, outMesh.vertexNormals);
+
+        // Calculate the per polygon material ids
+        FbxLayerElementMaterial* materialElement = inMesh->GetElementMaterial();
+        for (int i = 0; i < inMesh->GetPolygonCount(); i++) {
+            // Material index for the current polygon
+            int materialIndex = materialElement->GetIndexArray().GetAt(i);
+            outMesh.vertexMaterialIDs.emplace_back(materialIndices[materialIndex]);
+            outMesh.vertexMaterialIDs.emplace_back(materialIndices[materialIndex]);
+            outMesh.vertexMaterialIDs.emplace_back(materialIndices[materialIndex]);
+        }
 
         /* DEBUG INFO
         if (numTriangles < 31) {

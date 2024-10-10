@@ -333,8 +333,8 @@ int main() {
         // Load all meshes from the fbx model
         std::vector<model::Mesh> meshes;
         for (fbx::Mesh mesh : fbxScene.meshes) {
-            meshes.emplace_back(model::createMesh(application, allocator,
-                mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexIndices, mesh.materialIndex));
+            meshes.emplace_back(model::createMesh(application, allocator, commandPool,
+                mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexMaterialIDs, mesh.vertexIndices, mesh.materialIndex));
         }
 
         std::cout << "Num meshes: " << fbxScene.meshes.size() << std::endl;
@@ -534,6 +534,7 @@ int main() {
         for (size_t i = 0; i < meshes.size(); i++) {
             meshes[i].vertexPositions.~BufferSet();
             meshes[i].vertexUVs.~BufferSet();
+            meshes[i].vertexMaterials.~BufferSet();
             meshes[i].indices.~BufferSet();
         }
         
@@ -893,35 +894,44 @@ namespace {
         shaderStages[1].pName = "main";
 
         // Inputs into the vertex shader
-        VkVertexInputBindingDescription vertexInputs[2]{};
+        VkVertexInputBindingDescription vertexInputs[3]{};
         //Positions 3 floats
         vertexInputs[0].binding = 0;
         vertexInputs[0].stride = sizeof(float) * 3;
         vertexInputs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        //Colours 3 floats
+        // Texture coords 2 floats
         vertexInputs[1].binding = 1;
         vertexInputs[1].stride = sizeof(float) * 2;
         vertexInputs[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        // Material ID 1 int
+        vertexInputs[2].binding = 2;
+        vertexInputs[2].stride = sizeof(uint32_t);
+        vertexInputs[2].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
         // Attributes of the above inputs
-        VkVertexInputAttributeDescription vertexAttributes[2]{};
+        VkVertexInputAttributeDescription vertexAttributes[3]{};
         // Positions
         vertexAttributes[0].binding = 0;
         vertexAttributes[0].location = 0;
         vertexAttributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
         vertexAttributes[0].offset = 0;
-        // Colours
+        // Texture coords
         vertexAttributes[1].binding = 1;
         vertexAttributes[1].location = 1;
         vertexAttributes[1].format = VK_FORMAT_R32G32_SFLOAT;
         vertexAttributes[1].offset = 0;
+        // Material ID
+        vertexAttributes[2].binding = 2;
+        vertexAttributes[2].location = 2;
+        vertexAttributes[2].format = VK_FORMAT_R8_SINT;
+        vertexAttributes[2].offset = 0;
 
         // Vertex shader info using the above descriptions
         VkPipelineVertexInputStateCreateInfo vertexInfo{};
         vertexInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInfo.vertexBindingDescriptionCount = 2;
+        vertexInfo.vertexBindingDescriptionCount = 3;
         vertexInfo.pVertexBindingDescriptions = vertexInputs;
-        vertexInfo.vertexAttributeDescriptionCount = 2;
+        vertexInfo.vertexAttributeDescriptionCount = 3;
         vertexInfo.pVertexAttributeDescriptions = vertexAttributes;
 
         // Details about the topology of the input vertices
@@ -1248,9 +1258,9 @@ namespace {
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &textureDescriptorSets[materials[meshes[i].materialID].diffuseTextureID], 0, nullptr);
 
             // Bind the per vertex buffers
-            VkBuffer buffers[2] = { meshes[i].vertexPositions.buffer, meshes[i].vertexUVs.buffer};
-            VkDeviceSize offsets[2]{};
-            vkCmdBindVertexBuffers(commandBuffer, 0, 2, buffers, offsets);
+            VkBuffer buffers[3] = { meshes[i].vertexPositions.buffer, meshes[i].vertexUVs.buffer, meshes[i].vertexMaterials.buffer };
+            VkDeviceSize offsets[3]{};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 3, buffers, offsets);
 
             // Bind the index buffer
             vkCmdBindIndexBuffer(commandBuffer, meshes[i].indices.buffer, 0, VK_INDEX_TYPE_UINT32);

@@ -36,14 +36,21 @@ namespace fbx {
 	/// </summary>
 	struct Mesh
 	{
+		// Per mesh variables
 		std::uint32_t materialIndex;	// Relates to material
 		
+		// Per vertex variables
 		std::vector<glm::vec3> vertexPositions;		
 		std::vector<glm::vec2> vertexTextureCoords;		
 		std::vector<glm::vec3> vertexNormals;
 		std::vector<glm::vec4> vertexTangents;
+		std::vector<uint32_t> vertexMaterialIDs;
 
-		std::vector<std::uint32_t> vertexIndices;
+		// Per polygon variables
+		// VertexMaterialIDs could go here for later optimisation
+
+		// Per index variables
+		std::vector<uint32_t> vertexIndices;
 	};
 
 	/// <summary>
@@ -74,10 +81,10 @@ namespace fbx {
 	/// Creates and populates a mesh data structure given an Fbx mesh
 	/// </summary>
 	/// <param name="inMesh">An FbxMesh</param>
-	/// <param name="materialIndex">The material index from the node</param>
+	/// <param name="materialIndices">The material indices from the node</param>
 	/// <param name="transform">The node transform matrix</param>
 	/// <returns>A mesh data structure</returns>
-	Mesh createMeshData(FbxMesh* inMesh, uint32_t materialIndex, glm::mat4 transform);
+	Mesh createMeshData(FbxMesh* inMesh, std::vector<uint32_t>& materialIndices, glm::mat4 transform);
 
 	/// <summary>
 	/// Creates and populates a material data structure given an Fbx material

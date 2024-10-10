@@ -1,77 +1,98 @@
 #include "model.hpp"
 
 namespace model {
-	Mesh createMesh(app::AppContext app, VmaAllocator& allocator,
+	Mesh createMesh(app::AppContext app, VmaAllocator& allocator, VkCommandPool commandPool,
 		std::vector<glm::vec3>& vPositions,
 		std::vector<glm::vec2>& vTextureCoords,
+		std::vector<std::uint32_t>& vMaterials,
 		std::vector<std::uint32_t>& indices,
 		std::uint32_t materialID
 	){
 		// Size of the input data in bytes (use long long since the number can be very large)
 		unsigned long long sizeOfPositions = vPositions.size() * sizeof(glm::vec3);
 		unsigned long long sizeOfUVs = vTextureCoords.size() * sizeof(glm::vec2);
+		unsigned long long sizeOfMatIDs = vMaterials.size() * sizeof(std::uint32_t);
 		unsigned long long sizeOfIndices = indices.size() * sizeof(std::uint32_t);
 		
-		// Create the buffers on the GPU to hold the data
-		utility::BufferSet positionBuffer = utility::createBuffer(
+		// Set up the vertex positions
+		utility::BufferSet positionBuffer = setupMemoryBuffer(
+			app, 
 			allocator, 
+			commandPool, 
 			sizeOfPositions, 
-			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
+			vPositions.data(), 
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
 		);
-		utility::BufferSet UVBuffer = utility::createBuffer(
+
+		// Set up the vertex texture coordinates
+		utility::BufferSet UVBuffer = setupMemoryBuffer(
+			app,
 			allocator,
+			commandPool,
 			sizeOfUVs,
-			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			vTextureCoords.data(),
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+		);
+
+		// Set up the vertex material ids
+		utility::BufferSet MatBuffer = setupMemoryBuffer(
+			app,
+			allocator,
+			commandPool,
+			sizeOfMatIDs,
+			vMaterials.data(),
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+		);
+
+		// Set up the indices
+		utility::BufferSet indexBuffer = setupMemoryBuffer(
+			app,
+			allocator,
+			commandPool,
+			sizeOfIndices,
+			indices.data(),
+			VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+		);
+
+		Mesh outputMesh;
+
+		outputMesh.vertexPositions = std::move(positionBuffer);
+		outputMesh.vertexUVs = std::move(UVBuffer);
+		outputMesh.vertexMaterials = std::move(MatBuffer);
+		outputMesh.indices = std::move(indexBuffer);
+		outputMesh.numberOfVertices = uint32_t(vPositions.size());
+		outputMesh.numberOfIndices = uint32_t(indices.size());
+		outputMesh.materialID = materialID;
+
+		return outputMesh;
+
+	}
+
+	utility::BufferSet setupMemoryBuffer(app::AppContext app, VmaAllocator& allocator, VkCommandPool commandPool, VkDeviceSize sizeOfData, const void* data, VkBufferUsageFlags usageFlags) {
+		// Set up the on GPU buffer
+		utility::BufferSet buffer = utility::createBuffer(
+			allocator,
+			sizeOfData,
+			usageFlags,
 			VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
 		);
-		utility::BufferSet indexBuffer = utility::createBuffer(
+
+		// Set up the staging buffer
+		utility::BufferSet staging = utility::createBuffer(
 			allocator,
-			sizeOfIndices,
-			VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
-		);
-		// Create the staging buffers
-		utility::BufferSet positionStaging = utility::createBuffer(
-			allocator,
-			sizeOfPositions,
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			VMA_MEMORY_USAGE_AUTO,
-			VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-		);
-		utility::BufferSet UVStaging = utility::createBuffer(
-			allocator,
-			sizeOfUVs,
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			VMA_MEMORY_USAGE_AUTO,
-			VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-		);	
-		utility::BufferSet indexStaging = utility::createBuffer(
-			allocator,
-			sizeOfIndices,
+			sizeOfData,
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VMA_MEMORY_USAGE_AUTO,
 			VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
 		);
 
 		// Map the memory
-		void* positionMemory = nullptr;
-		vmaMapMemory(allocator, positionStaging.allocation, &positionMemory);
-		std::memcpy(positionMemory, vPositions.data(), sizeOfPositions);
-		vmaUnmapMemory(allocator, positionStaging.allocation);
-
-		void* UVMemory = nullptr;
-		vmaMapMemory(allocator, UVStaging.allocation, &UVMemory);
-		std::memcpy(UVMemory, vTextureCoords.data(), sizeOfUVs);
-		vmaUnmapMemory(allocator, UVStaging.allocation);
-
-		void* indexMemory = nullptr;
-		vmaMapMemory(allocator, indexStaging.allocation, &indexMemory);
-		std::memcpy(indexMemory, indices.data(), sizeOfIndices);
-		vmaUnmapMemory(allocator, indexStaging.allocation);
+		void* memory = nullptr;
+		vmaMapMemory(allocator, staging.allocation, &memory);
+		std::memcpy(memory, data, sizeOfData);
+		vmaUnmapMemory(allocator, staging.allocation);
 
 		// Create a command buffer to record the data into
-		VkCommandPool commandPool = utility::createCommandPool(app, 0);
 		VkCommandBuffer commandBuffer = utility::createCommandBuffer(app, commandPool);
 
 		// Begin recording into the command buffer
@@ -82,28 +103,10 @@ namespace model {
 		}
 
 		// Copy the data from staging to GPU
-		VkBufferCopy positionCopy{};
-		positionCopy.size = sizeOfPositions;
-		vkCmdCopyBuffer(commandBuffer, positionStaging.buffer, positionBuffer.buffer, 1, &positionCopy);
-		utility::createBufferBarrier(positionBuffer.buffer, VK_WHOLE_SIZE,
-			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-			commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
-		);
-
-		VkBufferCopy UVCopy{};
-		UVCopy.size = sizeOfUVs;
-		vkCmdCopyBuffer(commandBuffer, UVStaging.buffer, UVBuffer.buffer, 1, &UVCopy);
-		utility::createBufferBarrier(UVBuffer.buffer, VK_WHOLE_SIZE,
-			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
-			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-			commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
-		);
-
-		VkBufferCopy indexCopy{};
-		indexCopy.size = sizeOfIndices;
-		vkCmdCopyBuffer(commandBuffer, indexStaging.buffer, indexBuffer.buffer, 1, &indexCopy);
-		utility::createBufferBarrier(indexBuffer.buffer, VK_WHOLE_SIZE,
+		VkBufferCopy copy{};
+		copy.size = sizeOfData;
+		vkCmdCopyBuffer(commandBuffer, staging.buffer, buffer.buffer, 1, &copy);
+		utility::createBufferBarrier(buffer.buffer, VK_WHOLE_SIZE,
 			VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT,
 			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
 			commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
@@ -131,21 +134,12 @@ namespace model {
 			throw std::runtime_error("Fence failed to return as complete.");
 		}
 
-		Mesh outputMesh;
-
-		outputMesh.vertexPositions = std::move(positionBuffer);
-		outputMesh.vertexUVs = std::move(UVBuffer);
-		outputMesh.indices = std::move(indexBuffer);
-		outputMesh.numberOfVertices = uint32_t(vPositions.size());
-		outputMesh.numberOfIndices = uint32_t(indices.size());
-		outputMesh.materialID = materialID;
-		
-		// Clean up before returning
 		vkFreeCommandBuffers(app.logicalDevice, commandPool, 1, &commandBuffer);
-		vkDestroyCommandPool(app.logicalDevice, commandPool, nullptr);
 		vkDestroyFence(app.logicalDevice, submitComplete, nullptr);
 
-		return outputMesh;
+		return buffer;
 
 	}
+
+
 }

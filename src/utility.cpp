@@ -104,7 +104,8 @@ namespace utility {
 		std::uint32_t mipmapLevels,
 		VkCommandBuffer commandBuffer,
 		VkPipelineStageFlags aSrcStageFlags,
-		VkPipelineStageFlags aDstStageFlags
+		VkPipelineStageFlags aDstStageFlags,
+		uint32_t numLayers
 	) {
 		VkImageMemoryBarrier imageBarrier{};
 		imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -115,7 +116,7 @@ namespace utility {
 		imageBarrier.dstAccessMask = dstAccessMask;
 		imageBarrier.srcQueueFamilyIndex = srcQueueFamilyIndex;
 		imageBarrier.dstQueueFamilyIndex = dstQueueFamilyIndex;
-		imageBarrier.subresourceRange = VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, mipmapLevels, 0, 1 };
+		imageBarrier.subresourceRange = VkImageSubresourceRange{ VK_IMAGE_ASPECT_COLOR_BIT, 0, mipmapLevels, 0, numLayers };
 
 		vkCmdPipelineBarrier(
 			commandBuffer, aSrcStageFlags, aDstStageFlags, 0, // Buffer details

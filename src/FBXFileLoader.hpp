@@ -60,7 +60,10 @@ namespace fbx {
 	{
 		std::vector<Mesh> meshes;
 		std::vector<Material> materials;
-		std::vector<Texture> textures;
+		std::vector<Texture> diffuseTextures;
+		std::vector<Texture> specularTextures;
+		std::vector<Texture> normalTextures;
+		std::vector<Texture> emissiveTextures;
 	};
 
 	/// <summary>
@@ -98,9 +101,9 @@ namespace fbx {
 	/// Creates a texture and adds it to the output scene if it does not already exist
 	/// </summary>
 	/// <param name="texture">The texture to look for / add</param>
-	/// <param name="outputScene">The output data for the program</param>
+	/// <param name="textureSet">The output texture set to use</param>
 	/// <returns>The ID of the texture in the output scene</returns>
-	std::uint32_t createTexture(FbxFileTexture* texture, Scene& outputScene);
+	std::uint32_t createTexture(FbxFileTexture* texture, std::vector<Texture>& textureSet);
 
 	/// <summary>
 	/// Calculates the vertex tangents for a given mesh

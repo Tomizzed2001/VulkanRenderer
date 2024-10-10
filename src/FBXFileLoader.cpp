@@ -353,7 +353,7 @@ namespace fbx {
                 FbxFileTexture* diffuseTexture = ((FbxFileTexture*)phongMaterial->Diffuse.GetSrcObject(0));
 
                 // Add the index to the material
-                outMaterial.diffuseTextureID = createTexture(diffuseTexture, outputScene);
+                outMaterial.diffuseTextureID = createTexture(diffuseTexture, outputScene.diffuseTextures);
 
                 // Check if the diffuse texture is alpha mapped
                 FbxTexture* alphaTexture = ((FbxTexture*)phongMaterial->Diffuse.GetSrcObject(0));
@@ -372,7 +372,7 @@ namespace fbx {
                 FbxFileTexture* specularTexture = ((FbxFileTexture*)phongMaterial->Specular.GetSrcObject(0));
 
                 // Add the index to the material
-                outMaterial.specularTextureID = createTexture(specularTexture, outputScene);
+                outMaterial.specularTextureID = createTexture(specularTexture, outputScene.specularTextures);
             }
             else {
                 outMaterial.specularTextureID = 0xffffffff;
@@ -384,7 +384,7 @@ namespace fbx {
                 FbxFileTexture* normalTexture = ((FbxFileTexture*)phongMaterial->NormalMap.GetSrcObject(0));
 
                 // Add the index to the material
-                outMaterial.normalTextureID = createTexture(normalTexture, outputScene);
+                outMaterial.normalTextureID = createTexture(normalTexture, outputScene.normalTextures);
             }
             else {
                 outMaterial.normalTextureID = 0xffffffff;
@@ -396,7 +396,7 @@ namespace fbx {
                 FbxFileTexture* emissiveTexture = ((FbxFileTexture*)phongMaterial->Emissive.GetSrcObject(0));
 
                 // Add the index to the material
-                outMaterial.emissiveTextureID = createTexture(emissiveTexture, outputScene);
+                outMaterial.emissiveTextureID = createTexture(emissiveTexture, outputScene.emissiveTextures);
             }
             else {
                 outMaterial.emissiveTextureID = 0xffffffff;
@@ -415,15 +415,15 @@ namespace fbx {
         return outMaterial;
     }
 
-    std::uint32_t createTexture(FbxFileTexture* texture, Scene& outputScene) {
+    std::uint32_t createTexture(FbxFileTexture* texture, std::vector<Texture>& textureSet) {
         /* DEBUG LINE */
         if (DEBUG_OUTPUTS)
             std::cout << texture->GetFileName() << std::endl;
 
-        // Check if the diffuse texture already exists in the output scene
+        // Check if the texture already exists in the output scene
         int textureIndex = -1;
-        for (size_t i = 0; i < outputScene.textures.size(); i++) {
-            if (outputScene.textures[i].filePath == texture->GetFileName()) {
+        for (size_t i = 0; i < textureSet.size(); i++) {
+            if (textureSet[i].filePath == texture->GetFileName()) {
                 return i;
             }
         }
@@ -432,9 +432,9 @@ namespace fbx {
         if (textureIndex == -1) {
             Texture newTexture;
             newTexture.filePath = texture->GetFileName();
-            outputScene.textures.emplace_back(newTexture);
+            textureSet.emplace_back(newTexture);
             // Remember the ID
-            textureIndex = outputScene.textures.size() - 1;
+            textureIndex = textureSet.size() - 1;
         }
 
         return textureIndex;

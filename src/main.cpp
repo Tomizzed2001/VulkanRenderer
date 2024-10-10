@@ -225,7 +225,7 @@ namespace {
         VkRect2D renderArea,
         VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
-        std::vector<VkDescriptorSet>& textureDescriptorSets,        // Texture descriptors
+        VkDescriptorSet diffuseDescriptorSet,                       // Diffuse Texture descriptor
         std::vector<model::Mesh>& meshes,                           // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
         std::vector<fbx::Material>& materials                       // Material data
@@ -339,13 +339,20 @@ int main() {
 
         std::cout << "Num meshes: " << fbxScene.meshes.size() << std::endl;
         std::cout << "Num materials: " << fbxScene.materials.size() << std::endl;
-        std::cout << "Num textures: " << fbxScene.textures.size() << std::endl;
+        std::cout << "Num colour textures: " << fbxScene.diffuseTextures.size() << std::endl;
 
         // Load all textures from the fbx model
+        /*
         std::vector<utility::ImageSet> textures;
-        for (fbx::Texture texture : fbxScene.textures) {
+        for (fbx::Texture texture : fbxScene.diffuseTextures) {
             textures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
         }
+        */
+        std::vector<std::string> paths;
+        for (fbx::Texture texture : fbxScene.diffuseTextures) {
+            paths.emplace_back(texture.filePath);
+        }
+        utility::ImageSet diffuseTextures = utility::createDDSTextureArray(application, paths, allocator, commandPool);
 
         // Create a texture sampler
         VkSampler sampler = createTextureSampler(application);
@@ -362,11 +369,15 @@ int main() {
         VkDescriptorSet worldDescriptorSet = createBufferDescriptorSet(application, descriptorPool, worldDescriptorSetLayout, worldUniformBuffer.buffer);
 
         // Create and initialise the texture descriptor sets
+        /*
         std::vector<VkDescriptorSet> textureDescriptorSets;
         for (size_t i = 0; i < textures.size(); i++) {
             textureDescriptorSets.emplace_back(createImageDescriptorSet(application, descriptorPool,
                 materialDescriptorSetLayout, textures[i].imageView, sampler));
         }
+        */
+        VkDescriptorSet diffuseTextureDescriptorSet = createImageDescriptorSet(application, descriptorPool,
+            materialDescriptorSetLayout, diffuseTextures.imageView, sampler);
 
         std::cout << "Finished loading texture descriptor sets" << std::endl;
 
@@ -506,7 +517,7 @@ int main() {
                 pipeline,
                 pipelineLayout,
                 worldDescriptorSet,
-                textureDescriptorSets,
+                diffuseTextureDescriptorSet,
                 meshes,
                 meshOffsets,
                 fbxScene.materials
@@ -552,10 +563,14 @@ int main() {
         vkDestroySampler(application.logicalDevice, sampler, nullptr);
         vmaDestroyImage(allocator, depthBuffer.image, depthBuffer.allocation);
         vkDestroyImageView(application.logicalDevice, depthBuffer.imageView, nullptr);
+        /*
         for (size_t i = 0; i < textures.size(); i++) {
             vmaDestroyImage(allocator, textures[i].image, textures[i].allocation);
             vkDestroyImageView(application.logicalDevice, textures[i].imageView, nullptr);
         }
+        */
+        vmaDestroyImage(allocator, diffuseTextures.image, diffuseTextures.allocation);
+        vkDestroyImageView(application.logicalDevice, diffuseTextures.imageView, nullptr);
 
         // Destroy pipeline related components
         vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
@@ -1195,7 +1210,7 @@ namespace {
         VkRect2D renderArea,
         VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
-        std::vector<VkDescriptorSet>& textureDescriptorSets,        // Texture descriptors
+        VkDescriptorSet diffuseDescriptorSet,                       // Diffuse Texture descriptor
         std::vector<model::Mesh>& meshes,                           // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
         std::vector<fbx::Material>& materials                       // Material data
@@ -1255,7 +1270,7 @@ namespace {
         // Draw each separate mesh to screen
         for (size_t i = 0; i < meshes.size(); i++) {
             // Bind the correct texture
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &textureDescriptorSets[materials[meshes[i].materialID].diffuseTextureID], 0, nullptr);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &diffuseDescriptorSet, 0, nullptr);
 
             // Bind the per vertex buffers
             VkBuffer buffers[3] = { meshes[i].vertexPositions.buffer, meshes[i].vertexUVs.buffer, meshes[i].vertexMaterials.buffer };

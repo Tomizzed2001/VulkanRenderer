@@ -110,6 +110,7 @@ namespace utility {
 	/// <param name="commandBuffer">Command buffer to hold</param>
 	/// <param name="aSrcStageFlags">Current staging flag(s)</param>
 	/// <param name="aDstStageFlags">Future staging flag(s)</param>
+	/// <param name="numLayers">Number of layers (1 if not an array)</param>
 	void createImageBarrier(
 		VkImage image,
 		VkImageLayout srcLayout,
@@ -121,7 +122,8 @@ namespace utility {
 		std::uint32_t mipmapLevels,
 		VkCommandBuffer commandBuffer,
 		VkPipelineStageFlags aSrcStageFlags,
-		VkPipelineStageFlags aDstStageFlags
+		VkPipelineStageFlags aDstStageFlags,
+		uint32_t numLayers = 1
 	);
 
 	/// <summary>

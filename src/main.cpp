@@ -107,6 +107,13 @@ namespace {
     VkDescriptorSetLayout createMaterialDescriptorSetLayout(app::AppContext& app);
 
     /// <summary>
+    /// Creates a descriptor set layout to feed into the pipeline
+    /// </summary>
+    /// <param name="app">The context of the application</param>
+    /// <returns>Descriptor set layout</returns>
+    VkDescriptorSetLayout createTextureDescriptorSetLayout(app::AppContext& app);
+
+    /// <summary>
     /// Creates a pipeline layout prior to making a pipeline
     /// </summary>
     /// <param name="app">The context of the application</param>
@@ -189,6 +196,18 @@ namespace {
         VkImageView& imageView, VkSampler& sampler);
 
     /// <summary>
+    /// Creates a descriptor set to contain multiple images and initialises it
+    /// </summary>
+    /// <param name="app">Application context</param>
+    /// <param name="pool">Descriptor pool</param>
+    /// <param name="layout">Descriptor set layout</param>
+    /// <param name="images">The images to go into the descriptor</param>
+    /// <param name="sampler">The sampler to be used</param>
+    /// <returns>Image descriptor set</returns>
+    VkDescriptorSet createBindlessImageDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout,
+        std::vector<utility::ImageSet>& images, VkSampler& sampler);
+
+    /// <summary>
     /// Updates the world view matrices
     /// </summary>
     /// <param name="worldUniform">The uniform to be updated</param>
@@ -226,6 +245,7 @@ namespace {
         VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
         VkDescriptorSet diffuseDescriptorSet,                       // Diffuse Texture descriptor
+        VkDescriptorSet textureDescriptorSet,
         std::vector<model::Mesh>& meshes,                           // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
         std::vector<fbx::Material>& materials                       // Material data
@@ -291,11 +311,14 @@ int main() {
         VkDescriptorSetLayout worldDescriptorSetLayout = createWorldDescriptorSetLayout(application);
         // Material descriptor set layout contains the material textures
         VkDescriptorSetLayout materialDescriptorSetLayout = createMaterialDescriptorSetLayout(application);
+        // Texture descriptor set layout contains all the textures
+        VkDescriptorSetLayout textureDescriptorSetLayout = createTextureDescriptorSetLayout(application);
 
         // Create a vector of the descriptor sets to use
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
         descriptorSetLayouts.emplace_back(worldDescriptorSetLayout);
         descriptorSetLayouts.emplace_back(materialDescriptorSetLayout);
+        descriptorSetLayouts.emplace_back(textureDescriptorSetLayout);
 
         // Create a pipeline layout
         VkPipelineLayout pipelineLayout = createPipelineLayout(application, descriptorSetLayouts);
@@ -343,11 +366,11 @@ int main() {
 
         // Load all textures from the fbx model
         /*
+        */
         std::vector<utility::ImageSet> textures;
         for (fbx::Texture texture : fbxScene.diffuseTextures) {
             textures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
         }
-        */
         std::vector<std::string> paths;
         for (fbx::Texture texture : fbxScene.diffuseTextures) {
             paths.emplace_back(texture.filePath);
@@ -376,6 +399,9 @@ int main() {
                 materialDescriptorSetLayout, textures[i].imageView, sampler));
         }
         */
+        VkDescriptorSet bindlessTextureDescriptorSet = createBindlessImageDescriptorSet(application, descriptorPool, 
+            textureDescriptorSetLayout, textures, sampler);
+
         VkDescriptorSet diffuseTextureDescriptorSet = createImageDescriptorSet(application, descriptorPool,
             materialDescriptorSetLayout, diffuseTextures.imageView, sampler);
 
@@ -518,6 +544,7 @@ int main() {
                 pipelineLayout,
                 worldDescriptorSet,
                 diffuseTextureDescriptorSet,
+                bindlessTextureDescriptorSet,
                 meshes,
                 meshOffsets,
                 fbxScene.materials
@@ -549,7 +576,7 @@ int main() {
             meshes[i].indices.~BufferSet();
         }
         
-        // Destroy command relatedd components
+        // Destroy command related components
         vkDestroyDescriptorPool(application.logicalDevice, descriptorPool, nullptr);
         vkDestroySemaphore(application.logicalDevice, renderHasFinished, nullptr);
         vkDestroySemaphore(application.logicalDevice, imageIsReady, nullptr);
@@ -564,11 +591,11 @@ int main() {
         vmaDestroyImage(allocator, depthBuffer.image, depthBuffer.allocation);
         vkDestroyImageView(application.logicalDevice, depthBuffer.imageView, nullptr);
         /*
+        */
         for (size_t i = 0; i < textures.size(); i++) {
             vmaDestroyImage(allocator, textures[i].image, textures[i].allocation);
             vkDestroyImageView(application.logicalDevice, textures[i].imageView, nullptr);
         }
-        */
         vmaDestroyImage(allocator, diffuseTextures.image, diffuseTextures.allocation);
         vkDestroyImageView(application.logicalDevice, diffuseTextures.imageView, nullptr);
 
@@ -581,6 +608,7 @@ int main() {
         // Destroy descriptor set layouts
         vkDestroyDescriptorSetLayout(application.logicalDevice, materialDescriptorSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, worldDescriptorSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(application.logicalDevice, textureDescriptorSetLayout, nullptr);
 
         // Destroy Renderpass
         vkDestroyRenderPass(application.logicalDevice, renderPass, nullptr);
@@ -840,6 +868,32 @@ namespace {
         return descriptorSetLayout;
     }
 
+    VkDescriptorSetLayout createTextureDescriptorSetLayout(app::AppContext& app) {
+        // Set the bindings for the descriptor
+        // These are accessed in the shader as binding = n
+        // All data passed into the shaders must have a binding
+        int const numberOfBindings = 1;
+        VkDescriptorSetLayoutBinding bindings[numberOfBindings]{};
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[0].descriptorCount = 512;         // MAX NUMBER OF BINDINGS
+        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        // Set the info of the descriptor
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
+        descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        descriptorSetLayoutInfo.bindingCount = numberOfBindings;
+        descriptorSetLayoutInfo.pBindings = bindings;
+        descriptorSetLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT;
+
+        VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+        if (vkCreateDescriptorSetLayout(app.logicalDevice, &descriptorSetLayoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor set layout");
+        }
+
+        return descriptorSetLayout;
+    }
+
     VkPipelineLayout createPipelineLayout(app::AppContext& app, 
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts) {
 
@@ -848,8 +902,6 @@ namespace {
         layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         layoutInfo.setLayoutCount = descriptorSetLayouts.size();
         layoutInfo.pSetLayouts = descriptorSetLayouts.data();
-        //layoutInfo.setLayoutCount = 0;
-        //layoutInfo.pSetLayouts = nullptr;
         layoutInfo.pushConstantRangeCount = 0;
         layoutInfo.pPushConstantRanges = nullptr;
 
@@ -1095,6 +1147,7 @@ namespace {
         descriptorPoolInfo.poolSizeCount = 2;
         descriptorPoolInfo.pPoolSizes = descriptorPoolSize;
         descriptorPoolInfo.maxSets = 2048;
+        descriptorPoolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT_EXT;
 
         VkDescriptorPool descriptorPool;
         if(vkCreateDescriptorPool(app.logicalDevice, &descriptorPoolInfo, nullptr, &descriptorPool) != VK_SUCCESS){
@@ -1169,6 +1222,34 @@ namespace {
         return descriptorSet;
     }
 
+    VkDescriptorSet createBindlessImageDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout,
+        std::vector<utility::ImageSet>& images, VkSampler& sampler) {
+        // Create the world descriptor set and fill with the information
+        VkDescriptorSet descriptorSet = createDescriptorSet(app, pool, layout);
+
+        // Image info (Max number of textures in descriptor is 512)
+        std::vector<VkDescriptorImageInfo> imageInfos(images.size());
+        for (size_t i = 0; i < images.size(); i++) {
+            imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfos[i].imageView = images[i].imageView;
+            imageInfos[i].sampler = sampler;
+        }
+
+        // Descritor info set up
+        VkWriteDescriptorSet descriptor{};
+        descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor.dstSet = descriptorSet;
+        descriptor.dstBinding = 0;      // Binding in the shader
+        descriptor.descriptorCount = static_cast<uint32_t>(imageInfos.size());
+        descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor.pImageInfo = imageInfos.data();
+
+        // Update / initialise
+        vkUpdateDescriptorSets(app.logicalDevice, 1, &descriptor, 0, nullptr);
+
+        return descriptorSet;
+    }
+
     void updateWorldUniforms(WorldView& worldUniform, float screenAspect, CameraInfo& cameraInfo) {
         // Update the projection matrix
         worldUniform.projectionMatrix = glm::perspectiveRH_ZO(float(glm::radians(60.0f)), screenAspect, 0.1f, 100.0f);
@@ -1211,6 +1292,7 @@ namespace {
         VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
         VkDescriptorSet diffuseDescriptorSet,                       // Diffuse Texture descriptor
+        VkDescriptorSet textureDescriptorSet,
         std::vector<model::Mesh>& meshes,                           // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
         std::vector<fbx::Material>& materials                       // Material data
@@ -1266,6 +1348,7 @@ namespace {
 
         // Bind the uniforms to the pipeline
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &worldDescriptorSet, 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 2, 1, &textureDescriptorSet, 0, nullptr);
 
         // Draw each separate mesh to screen
         for (size_t i = 0; i < meshes.size(); i++) {

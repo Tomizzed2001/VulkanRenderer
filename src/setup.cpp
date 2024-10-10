@@ -576,6 +576,12 @@ namespace {
         }
 
         features.fillModeNonSolid = VK_TRUE;
+        
+        // Enable all descriptor features available
+        VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{};
+        descriptorIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+        availableFeatures.pNext = &descriptorIndexingFeatures;
+        vkGetPhysicalDeviceFeatures2(aPhysicalDev, &availableFeatures);
 
         // Set up the device info prior to creation
         VkDeviceCreateInfo deviceInfo{};
@@ -585,6 +591,7 @@ namespace {
         deviceInfo.enabledExtensionCount = std::uint32_t(aExtensions.size());
         deviceInfo.ppEnabledExtensionNames = aExtensions.data();
         deviceInfo.pEnabledFeatures = &features;
+        deviceInfo.pNext = &descriptorIndexingFeatures;
 
         VkDevice device = VK_NULL_HANDLE;
         if (vkCreateDevice(aPhysicalDev, &deviceInfo, nullptr, &device) != VK_SUCCESS)

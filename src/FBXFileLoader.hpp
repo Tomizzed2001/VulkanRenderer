@@ -37,7 +37,7 @@ namespace fbx {
 	struct Mesh
 	{
 		// Per mesh variables
-		std::uint32_t materialIndex;	// Relates to material
+		std::vector<uint32_t> materials;
 		
 		// Per vertex variables
 		std::vector<glm::vec3> vertexPositions;		

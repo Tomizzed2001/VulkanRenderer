@@ -10,5 +10,8 @@ layout (location = 0) out vec4 oColor;
 
 void main()
 {
+	if (texture(uTextureColour[matID], vec2(v2fTexCoord.x, v2fTexCoord.y)).a < 0.5){
+		discard;
+	}
 	oColor = vec4(texture(uTextureColour[matID], vec2(v2fTexCoord.x, v2fTexCoord.y)).rgb, 1.f);
 }

@@ -39,14 +39,12 @@ namespace model {
 	/// <param name="vTextureCoords">Vertex texture coords</param>
 	/// <param name="vMaterials">Vertex material ids</param>
 	/// <param name="indices">Vertex indices</param>
-	/// <param name="materialID"></param>
 	/// <returns>A mesh data structure</returns>
 	Mesh createMesh(app::AppContext app, VmaAllocator& allocator, VkCommandPool commandPool,
 		std::vector<glm::vec3>& vPositions, 
 		std::vector<glm::vec2>& vTextureCoords,
 		std::vector<std::uint32_t>& vMaterials,
-		std::vector<std::uint32_t>& indices,
-		std::uint32_t materialID
+		std::vector<std::uint32_t>& indices
 	);
 
 	/// <summary>

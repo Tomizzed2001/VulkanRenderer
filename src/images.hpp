@@ -17,6 +17,8 @@ namespace utility {
 		VkImage image = VK_NULL_HANDLE;
 		VkImageView imageView = VK_NULL_HANDLE;
 		VmaAllocation allocation = VK_NULL_HANDLE;
+
+		bool isAlpha = false;
 	};
 
 	/// <summary>
@@ -39,17 +41,5 @@ namespace utility {
 	/// <param name="commandPool">Command pool</param>
 	/// <returns>An image set containing the VkImage and VkImageView</returns>
 	ImageSet createDDSTextureImageSet(app::AppContext& app, char const* filePath, 
-		VmaAllocator& allocator, VkCommandPool commandPool);
-
-	/// <summary>
-	/// Creates a texture array for all the given dds images assuming that each image
-	/// is of the same size and format.
-	/// </summary>
-	/// <param name="app">Application context</param>
-	/// <param name="filePaths">Paths to the .dds files</param>
-	/// <param name="allocator">Memory allocator</param>
-	/// <param name="commandPool">Command pool</param>
-	/// <returns>An image set containing the VkImage and VkImageView</returns>
-	ImageSet createDDSTextureArray(app::AppContext& app, std::vector<std::string> filePaths,
 		VmaAllocator& allocator, VkCommandPool commandPool);
 }

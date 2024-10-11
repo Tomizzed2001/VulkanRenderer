@@ -48,6 +48,7 @@ namespace {
     namespace paths {
         char const* vertexShaderPath = "Shaders/vert.spv";
         char const* fragmentShaderPath = "Shaders/frag.spv";
+        char const* alphaFragmentShaderPath = "Shaders/alphaFrag.spv";
     }
 
     /// <summary>
@@ -104,13 +105,6 @@ namespace {
     /// </summary>
     /// <param name="app">The context of the application</param>
     /// <returns>Descriptor set layout</returns>
-    VkDescriptorSetLayout createMaterialDescriptorSetLayout(app::AppContext& app);
-
-    /// <summary>
-    /// Creates a descriptor set layout to feed into the pipeline
-    /// </summary>
-    /// <param name="app">The context of the application</param>
-    /// <returns>Descriptor set layout</returns>
     VkDescriptorSetLayout createTextureDescriptorSetLayout(app::AppContext& app);
 
     /// <summary>
@@ -137,9 +131,11 @@ namespace {
     /// <param name="renderPass">The render pass to apply the pipeline to</param>
     /// <param name="vertexShader">The vertex shader to use</param>
     /// <param name="fragmentShader">The fragment shader to use</param>
+    /// <param name="isAlpha">Is the pipeline using alpha masking / blending</param>
     /// <returns></returns>
     VkPipeline createPipeline(app::AppContext& app, VkPipelineLayout pipeLayout, 
-        VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader);
+        VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader,
+        bool isAlpha = false);
 
     /// <summary>
     /// Creates a frame buffer to store the output of a render pass
@@ -242,11 +238,12 @@ namespace {
         VkBuffer worldUniformBuffer, WorldView worldUniform,        // World Uniform
         VkRenderPass renderPass, VkFramebuffer frameBuffer,         // Render pass
         VkRect2D renderArea,
-        VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
+        VkPipeline pipeline, VkPipeline alphaPipeline,              // Pipelines
+        VkPipelineLayout pipelineLayout,                            // Pipelines
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
-        VkDescriptorSet diffuseDescriptorSet,                       // Diffuse Texture descriptor
-        VkDescriptorSet textureDescriptorSet,
+        VkDescriptorSet textureDescriptorSet,                       // Texture descriptors
         std::vector<model::Mesh>& meshes,                           // Mesh data
+        std::vector<model::Mesh>& alphaMeshes,                      // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
         std::vector<fbx::Material>& materials                       // Material data
     );
@@ -309,15 +306,12 @@ int main() {
         // Create the descriptor set layouts
         // World descriptor set layout contains the world view matrices
         VkDescriptorSetLayout worldDescriptorSetLayout = createWorldDescriptorSetLayout(application);
-        // Material descriptor set layout contains the material textures
-        VkDescriptorSetLayout materialDescriptorSetLayout = createMaterialDescriptorSetLayout(application);
-        // Texture descriptor set layout contains all the textures
+        // Texture descriptor set layout contains all the material textures
         VkDescriptorSetLayout textureDescriptorSetLayout = createTextureDescriptorSetLayout(application);
 
         // Create a vector of the descriptor sets to use
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
         descriptorSetLayouts.emplace_back(worldDescriptorSetLayout);
-        descriptorSetLayouts.emplace_back(materialDescriptorSetLayout);
         descriptorSetLayouts.emplace_back(textureDescriptorSetLayout);
 
         // Create a pipeline layout
@@ -326,9 +320,11 @@ int main() {
         // Create the shaders
         VkShaderModule vertexShader = createShaderModule(application, paths::vertexShaderPath);
         VkShaderModule fragmentShader = createShaderModule(application, paths::fragmentShaderPath);
+        VkShaderModule alphaFragmentShader = createShaderModule(application, paths::alphaFragmentShaderPath);
 
         // Create the pipeline
         VkPipeline pipeline = createPipeline(application, pipelineLayout, renderPass, vertexShader, fragmentShader);
+        VkPipeline alphaPipeline = createPipeline(application, pipelineLayout, renderPass, vertexShader, alphaFragmentShader, true);
 
         // Create a vkImage and vkImageView to store the depth buffer
         utility::ImageSet depthBuffer = utility::createImageSet(application, allocator,
@@ -353,29 +349,38 @@ int main() {
         //fbx::Scene fbxScene = fbx::loadFBXFile("Bistro/BistroExterior.fbx");
         fbx::Scene fbxScene = fbx::loadFBXFile("SunTemple/SunTemple.fbx");
 
-        // Load all meshes from the fbx model
+        // Load all textures from the fbx model
+        std::vector<utility::ImageSet> textures;
+        for (fbx::Texture texture : fbxScene.diffuseTextures) {
+            textures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+        }
+
+        // Load all meshes from the fbx model (Separate the meshes that use alpha textures)
         std::vector<model::Mesh> meshes;
+        std::vector<model::Mesh> alphaMeshes;
         for (fbx::Mesh mesh : fbxScene.meshes) {
-            meshes.emplace_back(model::createMesh(application, allocator, commandPool,
-                mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexMaterialIDs, mesh.vertexIndices, mesh.materialIndex));
+            // Check all materials of the mesh to see if they require alpha testing
+            bool alpha = false;
+            for (int texID = 0; texID < mesh.materials.size(); texID++) {
+                if (textures[mesh.materials[texID]].isAlpha) {
+                    alpha = true;
+                    break;
+                }
+            }
+            if (alpha) {
+                alphaMeshes.emplace_back(model::createMesh(application, allocator, commandPool,
+                    mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexMaterialIDs, mesh.vertexIndices));
+            }
+            else {
+                meshes.emplace_back(model::createMesh(application, allocator, commandPool,
+                    mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexMaterialIDs, mesh.vertexIndices));
+            }
         }
 
         std::cout << "Num meshes: " << fbxScene.meshes.size() << std::endl;
         std::cout << "Num materials: " << fbxScene.materials.size() << std::endl;
         std::cout << "Num colour textures: " << fbxScene.diffuseTextures.size() << std::endl;
 
-        // Load all textures from the fbx model
-        /*
-        */
-        std::vector<utility::ImageSet> textures;
-        for (fbx::Texture texture : fbxScene.diffuseTextures) {
-            textures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
-        }
-        std::vector<std::string> paths;
-        for (fbx::Texture texture : fbxScene.diffuseTextures) {
-            paths.emplace_back(texture.filePath);
-        }
-        utility::ImageSet diffuseTextures = utility::createDDSTextureArray(application, paths, allocator, commandPool);
 
         // Create a texture sampler
         VkSampler sampler = createTextureSampler(application);
@@ -392,18 +397,8 @@ int main() {
         VkDescriptorSet worldDescriptorSet = createBufferDescriptorSet(application, descriptorPool, worldDescriptorSetLayout, worldUniformBuffer.buffer);
 
         // Create and initialise the texture descriptor sets
-        /*
-        std::vector<VkDescriptorSet> textureDescriptorSets;
-        for (size_t i = 0; i < textures.size(); i++) {
-            textureDescriptorSets.emplace_back(createImageDescriptorSet(application, descriptorPool,
-                materialDescriptorSetLayout, textures[i].imageView, sampler));
-        }
-        */
         VkDescriptorSet bindlessTextureDescriptorSet = createBindlessImageDescriptorSet(application, descriptorPool, 
             textureDescriptorSetLayout, textures, sampler);
-
-        VkDescriptorSet diffuseTextureDescriptorSet = createImageDescriptorSet(application, descriptorPool,
-            materialDescriptorSetLayout, diffuseTextures.imageView, sampler);
 
         std::cout << "Finished loading texture descriptor sets" << std::endl;
 
@@ -481,9 +476,12 @@ int main() {
                     application.swapchainExtent.width != oldExtent.width) {
                     // Clean up old pipeline
                     vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
+                    vkDestroyPipeline(application.logicalDevice, alphaPipeline, nullptr);
                     // Remake pipeline
                     pipeline = createPipeline(application, pipelineLayout, renderPass,
                         vertexShader, fragmentShader);
+                    alphaPipeline = createPipeline(application, pipelineLayout, renderPass,
+                        vertexShader, alphaFragmentShader, true);
                 }
 
                 // Reset the resized window bool
@@ -515,7 +513,7 @@ int main() {
             }
             // Reset the fence for the next iteration
             if (vkResetFences(application.logicalDevice, 1, &fences[nextImageIndex]) != VK_SUCCESS) {
-                throw std::runtime_error("Fence buffer couldnt be reset.");
+                throw std::runtime_error("Fence buffer couldn't be reset.");
             }
             
             // Update the world view uniform
@@ -541,11 +539,12 @@ int main() {
                 swapchainFramebuffers[nextImageIndex],
                 renderArea,
                 pipeline,
+                alphaPipeline,
                 pipelineLayout,
                 worldDescriptorSet,
-                diffuseTextureDescriptorSet,
                 bindlessTextureDescriptorSet,
                 meshes,
+                alphaMeshes,
                 meshOffsets,
                 fbxScene.materials
             );
@@ -575,6 +574,12 @@ int main() {
             meshes[i].vertexMaterials.~BufferSet();
             meshes[i].indices.~BufferSet();
         }
+        for (size_t i = 0; i < alphaMeshes.size(); i++) {
+            alphaMeshes[i].vertexPositions.~BufferSet();
+            alphaMeshes[i].vertexUVs.~BufferSet();
+            alphaMeshes[i].vertexMaterials.~BufferSet();
+            alphaMeshes[i].indices.~BufferSet();
+        }
         
         // Destroy command related components
         vkDestroyDescriptorPool(application.logicalDevice, descriptorPool, nullptr);
@@ -596,17 +601,16 @@ int main() {
             vmaDestroyImage(allocator, textures[i].image, textures[i].allocation);
             vkDestroyImageView(application.logicalDevice, textures[i].imageView, nullptr);
         }
-        vmaDestroyImage(allocator, diffuseTextures.image, diffuseTextures.allocation);
-        vkDestroyImageView(application.logicalDevice, diffuseTextures.imageView, nullptr);
 
         // Destroy pipeline related components
         vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
+        vkDestroyPipeline(application.logicalDevice, alphaPipeline, nullptr);
         vkDestroyShaderModule(application.logicalDevice, vertexShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, fragmentShader, nullptr);
+        vkDestroyShaderModule(application.logicalDevice, alphaFragmentShader, nullptr);
         vkDestroyPipelineLayout(application.logicalDevice, pipelineLayout, nullptr);
 
         // Destroy descriptor set layouts
-        vkDestroyDescriptorSetLayout(application.logicalDevice, materialDescriptorSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, worldDescriptorSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, textureDescriptorSetLayout, nullptr);
 
@@ -843,31 +847,6 @@ namespace {
 
     }
 
-    VkDescriptorSetLayout createMaterialDescriptorSetLayout(app::AppContext& app) {
-        // Set the bindings for the descriptor
-        // These are accessed in the shader as binding = n
-        // All data passed into the shaders must have a binding
-        int const numberOfBindings = 1;
-        VkDescriptorSetLayoutBinding bindings[numberOfBindings]{};
-        bindings[0].binding = 0;
-        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        // Set the info of the descriptor
-        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
-        descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        descriptorSetLayoutInfo.bindingCount = numberOfBindings;
-        descriptorSetLayoutInfo.pBindings = bindings;
-
-        VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-        if (vkCreateDescriptorSetLayout(app.logicalDevice, &descriptorSetLayoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create descriptor set layout");
-        }
-
-        return descriptorSetLayout;
-    }
-
     VkDescriptorSetLayout createTextureDescriptorSetLayout(app::AppContext& app) {
         // Set the bindings for the descriptor
         // These are accessed in the shader as binding = n
@@ -947,7 +926,8 @@ namespace {
     }
 
     VkPipeline createPipeline(app::AppContext& app, VkPipelineLayout pipeLayout,
-        VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader){
+        VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader,
+        bool isAlpha){
 
         // Detail the shader stages of the pipeline
         VkPipelineShaderStageCreateInfo shaderStages[2]{};
@@ -1034,7 +1014,12 @@ namespace {
         rasterizationInfo.depthClampEnable = VK_FALSE;
         rasterizationInfo.rasterizerDiscardEnable = VK_FALSE;
         rasterizationInfo.polygonMode = VK_POLYGON_MODE_FILL;
-        rasterizationInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+        if (isAlpha) {
+            rasterizationInfo.cullMode = VK_CULL_MODE_NONE;
+        }
+        else {
+            rasterizationInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+        }
         rasterizationInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizationInfo.depthBiasEnable = VK_FALSE;
         rasterizationInfo.lineWidth = 1.f;
@@ -1289,11 +1274,12 @@ namespace {
         VkBuffer worldUniformBuffer, WorldView worldUniform,        // World Uniform
         VkRenderPass renderPass, VkFramebuffer frameBuffer,         // Render pass
         VkRect2D renderArea,
-        VkPipeline pipeline, VkPipelineLayout pipelineLayout,       // Pipeline
+        VkPipeline pipeline, VkPipeline alphaPipeline,              // Pipelines
+        VkPipelineLayout pipelineLayout,                            // Pipelines
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
-        VkDescriptorSet diffuseDescriptorSet,                       // Diffuse Texture descriptor
-        VkDescriptorSet textureDescriptorSet,
+        VkDescriptorSet textureDescriptorSet,                       // Texture descriptors
         std::vector<model::Mesh>& meshes,                           // Mesh data
+        std::vector<model::Mesh>& alphaMeshes,                      // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
         std::vector<fbx::Material>& materials                       // Material data
     ) {
@@ -1348,13 +1334,10 @@ namespace {
 
         // Bind the uniforms to the pipeline
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &worldDescriptorSet, 0, nullptr);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 2, 1, &textureDescriptorSet, 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &textureDescriptorSet, 0, nullptr);
 
         // Draw each separate mesh to screen
         for (size_t i = 0; i < meshes.size(); i++) {
-            // Bind the correct texture
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &diffuseDescriptorSet, 0, nullptr);
-
             // Bind the per vertex buffers
             VkBuffer buffers[3] = { meshes[i].vertexPositions.buffer, meshes[i].vertexUVs.buffer, meshes[i].vertexMaterials.buffer };
             VkDeviceSize offsets[3]{};
@@ -1364,8 +1347,23 @@ namespace {
             vkCmdBindIndexBuffer(commandBuffer, meshes[i].indices.buffer, 0, VK_INDEX_TYPE_UINT32);
 
             // Do the draw call
-            //vkCmdDraw(commandBuffer, mesh.numberOfVertices, 1, 0, 0);
             vkCmdDrawIndexed(commandBuffer, meshes[i].numberOfIndices, 1, 0, 0, 0);
+        }
+
+        // Select the alpha pipeline
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, alphaPipeline);
+        // Draw each separate mesh to screen
+        for (size_t i = 0; i < alphaMeshes.size(); i++) {
+            // Bind the per vertex buffers
+            VkBuffer buffers[3] = { alphaMeshes[i].vertexPositions.buffer, alphaMeshes[i].vertexUVs.buffer, alphaMeshes[i].vertexMaterials.buffer };
+            VkDeviceSize offsets[3]{};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 3, buffers, offsets);
+
+            // Bind the index buffer
+            vkCmdBindIndexBuffer(commandBuffer, alphaMeshes[i].indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+            // Do the draw call
+            vkCmdDrawIndexed(commandBuffer, alphaMeshes[i].numberOfIndices, 1, 0, 0, 0);
         }
 
         // End the renderpass

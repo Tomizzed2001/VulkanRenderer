@@ -161,6 +161,7 @@ namespace fbx {
         else {
             // Create the mesh data
             outputScene.meshes.emplace_back(createMeshData(nodeMesh, materialIndices, transformMatrix));
+            outputScene.meshes.back().materials = materialIndices;
         }
 
         // If there is no children do not recurse
@@ -177,9 +178,6 @@ namespace fbx {
 
     Mesh createMeshData(FbxMesh* inMesh, std::vector<uint32_t>& materialIndices, glm::mat4 transform) {
         Mesh outMesh;
-
-        // Set main material index
-        outMesh.materialIndex = materialIndices[0];
 
         // Get the number of triangles in the mesh and all the triangles
         int numTriangles = inMesh->GetPolygonCount();

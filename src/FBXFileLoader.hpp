@@ -13,6 +13,8 @@ namespace fbx {
 	struct Texture
 	{
 		std::string	filePath;
+
+		bool isEmpty = false;
 	};
 
 	/// <summary>

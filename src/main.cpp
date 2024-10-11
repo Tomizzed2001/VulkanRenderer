@@ -49,6 +49,7 @@ namespace {
         char const* vertexShaderPath = "Shaders/vert.spv";
         char const* fragmentShaderPath = "Shaders/frag.spv";
         char const* alphaFragmentShaderPath = "Shaders/alphaFrag.spv";
+        char const* textureFillPath = "EmptyTexture.png";
     }
 
     /// <summary>
@@ -352,7 +353,17 @@ int main() {
         // Load all textures from the fbx model
         std::vector<utility::ImageSet> textures;
         for (fbx::Texture texture : fbxScene.diffuseTextures) {
-            textures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+            // If texture is not empty
+            if (texture.isEmpty) {
+                textures.emplace_back(utility::createPNGTextureImageSet(application, paths::textureFillPath, allocator, commandPool));
+            }
+            // If texture is a dds texture
+            else if (texture.filePath.ends_with(".dds")) {
+                textures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+            }
+            else if (texture.filePath.ends_with(".png") || texture.filePath.ends_with(".jpg")) {
+                textures.emplace_back(utility::createPNGTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+            }
         }
 
         // Load all meshes from the fbx model (Separate the meshes that use alpha textures)
@@ -380,6 +391,9 @@ int main() {
         std::cout << "Num meshes: " << fbxScene.meshes.size() << std::endl;
         std::cout << "Num materials: " << fbxScene.materials.size() << std::endl;
         std::cout << "Num colour textures: " << fbxScene.diffuseTextures.size() << std::endl;
+        std::cout << "Num normal textures: " << fbxScene.normalTextures.size() << std::endl;
+        std::cout << "Num specular textures: " << fbxScene.specularTextures.size() << std::endl;
+        std::cout << "Num emissive textures: " << fbxScene.emissiveTextures.size() << std::endl;
 
 
         // Create a texture sampler

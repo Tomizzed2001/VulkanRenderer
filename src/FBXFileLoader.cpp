@@ -298,36 +298,6 @@ namespace fbx {
             outMesh.vertexMaterialIDs.emplace_back(materialIndices[materialIndex]);
         }
 
-        /* DEBUG INFO
-        if (numTriangles < 31) {
-            std::cout << "Material Index: " << outMesh.materialIndex << std::endl;
-
-            std::cout << "Indices: ";
-            for (size_t i = 0; i < outMesh.vertexIndices.size(); i++) {
-                std::cout << outMesh.vertexIndices[i] << " ,";
-            }
-            std::cout << std::endl;
-
-            std::cout << "Positions: ";
-            for (size_t i = 0; i < outMesh.vertexPositions.size(); i++) {
-                std::cout << glm::to_string(outMesh.vertexPositions[i]) << ", ";
-            }
-            std::cout << std::endl;
-
-            std::cout << "Normals: ";
-            for (size_t i = 0; i < outMesh.vertexNormals.size(); i++) {
-                std::cout << glm::to_string(outMesh.vertexNormals[i]) << ", ";
-            }
-            std::cout << std::endl;
-
-            std::cout << "Texture Coords: ";
-            for (size_t i = 0; i < outMesh.vertexTextureCoords.size(); i++) {
-                std::cout << glm::to_string(outMesh.vertexTextureCoords[i]) << ", ";
-            }
-            std::cout << std::endl;
-        }
-        */
-
         return outMesh;
     }
 
@@ -360,10 +330,15 @@ namespace fbx {
                 }
             }
             else {
+                // Place an empty texture in the array so it is aligned with material index
+                Texture emptyTexture;
+                emptyTexture.isEmpty = true;
+                outputScene.diffuseTextures.emplace_back(emptyTexture);
+
                 outMaterial.diffuseTextureID = 0xffffffff;
             }
 
-            // NOTE: The specular is the roughness and metalness it seems
+            // NOTE: The specular is the roughness and metalness
             // Check for specular texture
             if (phongMaterial->Specular.GetSrcObject(0)) {
                 // There is a specular texture
@@ -373,6 +348,11 @@ namespace fbx {
                 outMaterial.specularTextureID = createTexture(specularTexture, outputScene.specularTextures);
             }
             else {
+                // Place an empty texture in the array so it is aligned with material index
+                Texture emptyTexture;
+                emptyTexture.isEmpty = true;
+                outputScene.specularTextures.emplace_back(emptyTexture);
+
                 outMaterial.specularTextureID = 0xffffffff;
             }
 
@@ -385,6 +365,11 @@ namespace fbx {
                 outMaterial.normalTextureID = createTexture(normalTexture, outputScene.normalTextures);
             }
             else {
+                // Place an empty texture in the array so it is aligned with material index
+                Texture emptyTexture;
+                emptyTexture.isEmpty = true;
+                outputScene.normalTextures.emplace_back(emptyTexture);
+
                 outMaterial.normalTextureID = 0xffffffff;
             }
 
@@ -397,6 +382,11 @@ namespace fbx {
                 outMaterial.emissiveTextureID = createTexture(emissiveTexture, outputScene.emissiveTextures);
             }
             else {
+                // Place an empty texture in the array so it is aligned with material index
+                Texture emptyTexture;
+                emptyTexture.isEmpty = true;
+                outputScene.emissiveTextures.emplace_back(emptyTexture);
+
                 outMaterial.emissiveTextureID = 0xffffffff;
             }
 

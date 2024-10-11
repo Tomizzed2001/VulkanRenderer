@@ -42,4 +42,15 @@ namespace utility {
 	/// <returns>An image set containing the VkImage and VkImageView</returns>
 	ImageSet createDDSTextureImageSet(app::AppContext& app, char const* filePath, 
 		VmaAllocator& allocator, VkCommandPool commandPool);
+
+	/// <summary>
+	/// Creates an image texture set given a png file
+	/// </summary>
+	/// <param name="app">Application context</param>
+	/// <param name="filePath">Path to the .png file</param>
+	/// <param name="allocator">Memory allocator</param>
+	/// <param name="commandPool">Command pool</param>
+	/// <returns>An image set containing the VkImage and VkImageView</returns>
+	ImageSet createPNGTextureImageSet(app::AppContext& app, char const* filePath, VmaAllocator& allocator,
+		VkCommandPool commandPool);
 }

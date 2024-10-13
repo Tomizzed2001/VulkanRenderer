@@ -1,25 +1,35 @@
 #version 450
 
-layout(location = 0) in vec3 iPosition;
-layout(location = 1) in vec2 iTexCoord;
-layout(location = 2) in int iMaterialID;
+// Bring in the vertex buffer values
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec2 inTexCoord;
+layout(location = 2) in vec3 inNormal;
+layout(location = 3) in vec4 inTangent;
+layout(location = 4) in int inMaterialID;
 
-
-layout(set = 0, binding = 0) uniform UScene
+// The world view uniform
+layout(set = 0, binding = 0) uniform worldView
 {
-	mat4 camera;
-	mat4 projection;
-	mat4 projCam;
-} uScene;
+	mat4 projectionCameraMatrix;
+	vec3 cameraPosition;
+} view;
 
-// v2f means vertex to fragment
-layout(location = 0) out vec2 v2fTexCoord; 
-layout(location = 1) out int matID;
+// The values to output to the fragment shader
+layout (location = 0) out vec2 outTexCoord; 
+layout (location = 1) out vec3 outPosition;
+layout (location = 2) out vec3 outNormal;
+layout (location = 3) out vec4 outTangent;
+layout (location = 4) out int outMatID;
 
 void main()
 {
-	v2fTexCoord = iTexCoord;
-	matID = iMaterialID;
+	// Set the output values to go to the fragment shader
+	outTexCoord = inTexCoord;
+	outPosition = inPosition;
+	outNormal = inNormal;
+	outTangent = inTangent;
+	outMatID = inMaterialID;
 
-	gl_Position = uScene.projCam * vec4(iPosition, 1.f);
+	// The position of the vertex as shown to screen
+	gl_Position = view.projectionCameraMatrix * vec4(inPosition, 1.f);
 }

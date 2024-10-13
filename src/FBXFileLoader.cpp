@@ -221,10 +221,10 @@ namespace fbx {
             int index = indices[i];
 
             // Get the vertex position
-            glm::vec3 vertex = glm::vec4(fbxVertices[index][0], fbxVertices[index][1], fbxVertices[index][2], 1);
+            glm::vec3 vertex = glm::vec3(fbxVertices[index][0], fbxVertices[index][1], fbxVertices[index][2]);
 
             // Get the vertex normal
-            glm::vec3 normal = glm::vec4(normals[index][0], normals[index][1], normals[index][2], 1);
+            glm::vec3 normal = glm::vec3(normals[i][0], normals[i][1], normals[i][2]);
 
             // Get the vertex texture co-ordinate
             glm::vec2 uv = glm::vec2(uvs[i][0], uvs[i][1]);

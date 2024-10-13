@@ -18,6 +18,8 @@ namespace model {
 		// Vertex data
 		utility::BufferSet vertexPositions;
 		utility::BufferSet vertexUVs;
+		utility::BufferSet vertexNormals;
+		utility::BufferSet vertexTangents;
 		utility::BufferSet vertexMaterials;
 		utility::BufferSet indices;
 
@@ -37,12 +39,16 @@ namespace model {
 	/// <param name="commandPool">Vulkan command pool</param>
 	/// <param name="vPositions">Vertex positions</param>
 	/// <param name="vTextureCoords">Vertex texture coords</param>
+	/// <param name="vNormals">Vertex normals</param>
+	/// <param name="vTangents">Vertex tangents</param>
 	/// <param name="vMaterials">Vertex material ids</param>
 	/// <param name="indices">Vertex indices</param>
 	/// <returns>A mesh data structure</returns>
 	Mesh createMesh(app::AppContext app, VmaAllocator& allocator, VkCommandPool commandPool,
-		std::vector<glm::vec3>& vPositions, 
+		std::vector<glm::vec3>& vPositions,
 		std::vector<glm::vec2>& vTextureCoords,
+		std::vector<glm::vec3>& vNormals,
+		std::vector<glm::vec4>& vTangents,
 		std::vector<std::uint32_t>& vMaterials,
 		std::vector<std::uint32_t>& indices
 	);

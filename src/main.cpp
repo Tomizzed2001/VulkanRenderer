@@ -40,9 +40,8 @@ namespace {
     };
 
     struct WorldView {
-        glm::mat4 cameraMatrix;
-        glm::mat4 projectionMatrix;
         glm::mat4 projectionCameraMatrix;
+        glm::vec3 cameraPosition;
     };
 
     namespace paths {
@@ -380,11 +379,11 @@ int main() {
             }
             if (alpha) {
                 alphaMeshes.emplace_back(model::createMesh(application, allocator, commandPool,
-                    mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexMaterialIDs, mesh.vertexIndices));
+                    mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexNormals, mesh.vertexTangents, mesh.vertexMaterialIDs, mesh.vertexIndices));
             }
             else {
                 meshes.emplace_back(model::createMesh(application, allocator, commandPool,
-                    mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexMaterialIDs, mesh.vertexIndices));
+                    mesh.vertexPositions, mesh.vertexTextureCoords, mesh.vertexNormals, mesh.vertexTangents, mesh.vertexMaterialIDs, mesh.vertexIndices));
             }
         }
 
@@ -585,12 +584,16 @@ int main() {
         for (size_t i = 0; i < meshes.size(); i++) {
             meshes[i].vertexPositions.~BufferSet();
             meshes[i].vertexUVs.~BufferSet();
+            meshes[i].vertexNormals.~BufferSet();
+            meshes[i].vertexTangents.~BufferSet();
             meshes[i].vertexMaterials.~BufferSet();
             meshes[i].indices.~BufferSet();
         }
         for (size_t i = 0; i < alphaMeshes.size(); i++) {
             alphaMeshes[i].vertexPositions.~BufferSet();
             alphaMeshes[i].vertexUVs.~BufferSet();
+            alphaMeshes[i].vertexNormals.~BufferSet();
+            alphaMeshes[i].vertexTangents.~BufferSet();
             alphaMeshes[i].vertexMaterials.~BufferSet();
             alphaMeshes[i].indices.~BufferSet();
         }
@@ -844,7 +847,7 @@ namespace {
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         bindings[0].descriptorCount = 1;
-        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
         // Set the info of the descriptor
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
@@ -955,8 +958,8 @@ namespace {
         shaderStages[1].pName = "main";
 
         // Inputs into the vertex shader
-        VkVertexInputBindingDescription vertexInputs[3]{};
-        //Positions 3 floats
+        VkVertexInputBindingDescription vertexInputs[5]{};
+        // Positions 3 floats
         vertexInputs[0].binding = 0;
         vertexInputs[0].stride = sizeof(float) * 3;
         vertexInputs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
@@ -964,13 +967,21 @@ namespace {
         vertexInputs[1].binding = 1;
         vertexInputs[1].stride = sizeof(float) * 2;
         vertexInputs[1].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        // Material ID 1 int
+        // Normals 3 floats
         vertexInputs[2].binding = 2;
-        vertexInputs[2].stride = sizeof(uint32_t);
+        vertexInputs[2].stride = sizeof(float) * 3;
         vertexInputs[2].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        // Tangents 4 floats
+        vertexInputs[3].binding = 3;
+        vertexInputs[3].stride = sizeof(float) * 4;
+        vertexInputs[3].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        // Material ID 1 int
+        vertexInputs[4].binding = 4;
+        vertexInputs[4].stride = sizeof(uint32_t);
+        vertexInputs[4].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
         // Attributes of the above inputs
-        VkVertexInputAttributeDescription vertexAttributes[3]{};
+        VkVertexInputAttributeDescription vertexAttributes[5]{};
         // Positions
         vertexAttributes[0].binding = 0;
         vertexAttributes[0].location = 0;
@@ -981,18 +992,28 @@ namespace {
         vertexAttributes[1].location = 1;
         vertexAttributes[1].format = VK_FORMAT_R32G32_SFLOAT;
         vertexAttributes[1].offset = 0;
-        // Material ID
+        // Normals
         vertexAttributes[2].binding = 2;
         vertexAttributes[2].location = 2;
-        vertexAttributes[2].format = VK_FORMAT_R8_SINT;
+        vertexAttributes[2].format = VK_FORMAT_R32G32B32_SFLOAT;
         vertexAttributes[2].offset = 0;
+        // Tangents
+        vertexAttributes[3].binding = 3;
+        vertexAttributes[3].location = 3;
+        vertexAttributes[3].format = VK_FORMAT_R32G32B32_SFLOAT;
+        vertexAttributes[3].offset = 0;
+        // Material ID
+        vertexAttributes[4].binding = 4;
+        vertexAttributes[4].location = 4;
+        vertexAttributes[4].format = VK_FORMAT_R8_SINT;
+        vertexAttributes[4].offset = 0;
 
         // Vertex shader info using the above descriptions
         VkPipelineVertexInputStateCreateInfo vertexInfo{};
         vertexInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInfo.vertexBindingDescriptionCount = 3;
+        vertexInfo.vertexBindingDescriptionCount = 5;
         vertexInfo.pVertexBindingDescriptions = vertexInputs;
-        vertexInfo.vertexAttributeDescriptionCount = 3;
+        vertexInfo.vertexAttributeDescriptionCount = 5;
         vertexInfo.pVertexAttributeDescriptions = vertexAttributes;
 
         // Details about the topology of the input vertices
@@ -1251,14 +1272,17 @@ namespace {
 
     void updateWorldUniforms(WorldView& worldUniform, float screenAspect, CameraInfo& cameraInfo) {
         // Update the projection matrix
-        worldUniform.projectionMatrix = glm::perspectiveRH_ZO(float(glm::radians(60.0f)), screenAspect, 0.1f, 100.0f);
-        worldUniform.projectionMatrix[1][1] *= -1.f;
+        glm::mat4 projectionMatrix = glm::perspectiveRH_ZO(float(glm::radians(60.0f)), screenAspect, 0.1f, 100.0f);
+        projectionMatrix[1][1] *= -1.f;
 
         // Update the camara matrix
-        worldUniform.cameraMatrix = glm::inverse(cameraInfo.worldCameraMatrix);
+        glm::mat4 cameraMatrix = glm::inverse(cameraInfo.worldCameraMatrix);
 
         // Create the projection camera matrix
-        worldUniform.projectionCameraMatrix = worldUniform.projectionMatrix * worldUniform.cameraMatrix;
+        worldUniform.projectionCameraMatrix = projectionMatrix * cameraMatrix;
+    
+        // Update the camera position
+        worldUniform.cameraPosition = cameraInfo.position;
     }
 
     void recreateSwapchain(app::AppContext& app) {
@@ -1353,9 +1377,9 @@ namespace {
         // Draw each separate mesh to screen
         for (size_t i = 0; i < meshes.size(); i++) {
             // Bind the per vertex buffers
-            VkBuffer buffers[3] = { meshes[i].vertexPositions.buffer, meshes[i].vertexUVs.buffer, meshes[i].vertexMaterials.buffer };
-            VkDeviceSize offsets[3]{};
-            vkCmdBindVertexBuffers(commandBuffer, 0, 3, buffers, offsets);
+            VkBuffer buffers[5] = { meshes[i].vertexPositions.buffer, meshes[i].vertexUVs.buffer, meshes[i].vertexNormals.buffer, meshes[i].vertexTangents.buffer,meshes[i].vertexMaterials.buffer};
+            VkDeviceSize offsets[5]{};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 5, buffers, offsets);
 
             // Bind the index buffer
             vkCmdBindIndexBuffer(commandBuffer, meshes[i].indices.buffer, 0, VK_INDEX_TYPE_UINT32);
@@ -1369,9 +1393,9 @@ namespace {
         // Draw each separate mesh to screen
         for (size_t i = 0; i < alphaMeshes.size(); i++) {
             // Bind the per vertex buffers
-            VkBuffer buffers[3] = { alphaMeshes[i].vertexPositions.buffer, alphaMeshes[i].vertexUVs.buffer, alphaMeshes[i].vertexMaterials.buffer };
-            VkDeviceSize offsets[3]{};
-            vkCmdBindVertexBuffers(commandBuffer, 0, 3, buffers, offsets);
+            VkBuffer buffers[5] = { alphaMeshes[i].vertexPositions.buffer, alphaMeshes[i].vertexUVs.buffer, alphaMeshes[i].vertexNormals.buffer, alphaMeshes[i].vertexTangents.buffer, alphaMeshes[i].vertexMaterials.buffer};
+            VkDeviceSize offsets[5]{};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 5, buffers, offsets);
 
             // Bind the index buffer
             vkCmdBindIndexBuffer(commandBuffer, alphaMeshes[i].indices.buffer, 0, VK_INDEX_TYPE_UINT32);

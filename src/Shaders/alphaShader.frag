@@ -1,17 +1,24 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : require
 
-layout (location = 0) in vec2 v2fTexCoord;
-layout (location = 1) flat in int matID;
+layout (location = 0) in vec2 inTexCoord;
+layout (location = 1) in vec3 inPosition;
+layout (location = 4) flat in int inMatID;
 
-layout (set = 1, binding = 0) uniform sampler2D uTextureColour[];
+layout(set = 0, binding = 0) uniform worldView
+{
+	mat4 projectionCameraMatrix;
+	vec3 cameraPosition;
+} view;
 
-layout (location = 0) out vec4 oColor;
+layout (set = 1, binding = 0) uniform sampler2D textureColour[];
+
+layout (location = 0) out vec4 outColor;
 
 void main()
 {
-	if (texture(uTextureColour[matID], vec2(v2fTexCoord.x, v2fTexCoord.y)).a < 0.5){
+	if (texture(textureColour[inMatID], vec2(inTexCoord.x, inTexCoord.y)).a < 0.5){
 		discard;
 	}
-	oColor = vec4(texture(uTextureColour[matID], vec2(v2fTexCoord.x, v2fTexCoord.y)).rgb, 1.f);
+	outColor = vec4(texture(textureColour[inMatID], vec2(inTexCoord.x, inTexCoord.y)).rgb, 1.f);
 }

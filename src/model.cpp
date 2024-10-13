@@ -4,12 +4,16 @@ namespace model {
 	Mesh createMesh(app::AppContext app, VmaAllocator& allocator, VkCommandPool commandPool,
 		std::vector<glm::vec3>& vPositions,
 		std::vector<glm::vec2>& vTextureCoords,
+		std::vector<glm::vec3>& vNormals,
+		std::vector<glm::vec4>& vTangents,
 		std::vector<std::uint32_t>& vMaterials,
 		std::vector<std::uint32_t>& indices
 	){
 		// Size of the input data in bytes (use long long since the number can be very large)
 		unsigned long long sizeOfPositions = vPositions.size() * sizeof(glm::vec3);
 		unsigned long long sizeOfUVs = vTextureCoords.size() * sizeof(glm::vec2);
+		unsigned long long sizeOfNormals = vNormals.size() * sizeof(glm::vec3);
+		unsigned long long sizeOfTangents = vTangents.size() * sizeof(glm::vec4);
 		unsigned long long sizeOfMatIDs = vMaterials.size() * sizeof(std::uint32_t);
 		unsigned long long sizeOfIndices = indices.size() * sizeof(std::uint32_t);
 		
@@ -33,8 +37,28 @@ namespace model {
 			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
 		);
 
+		// Set up the vertex texture coordinates
+		utility::BufferSet normalBuffer = setupMemoryBuffer(
+			app,
+			allocator,
+			commandPool,
+			sizeOfNormals,
+			vNormals.data(),
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+		);
+
+		// Set up the vertex texture coordinates
+		utility::BufferSet tangentBuffer = setupMemoryBuffer(
+			app,
+			allocator,
+			commandPool,
+			sizeOfTangents,
+			vTangents.data(),
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+		);
+
 		// Set up the vertex material ids
-		utility::BufferSet MatBuffer = setupMemoryBuffer(
+		utility::BufferSet matBuffer = setupMemoryBuffer(
 			app,
 			allocator,
 			commandPool,
@@ -57,7 +81,9 @@ namespace model {
 
 		outputMesh.vertexPositions = std::move(positionBuffer);
 		outputMesh.vertexUVs = std::move(UVBuffer);
-		outputMesh.vertexMaterials = std::move(MatBuffer);
+		outputMesh.vertexNormals = std::move(normalBuffer);
+		outputMesh.vertexTangents = std::move(tangentBuffer);
+		outputMesh.vertexMaterials = std::move(matBuffer);
 		outputMesh.indices = std::move(indexBuffer);
 		outputMesh.numberOfVertices = uint32_t(vPositions.size());
 		outputMesh.numberOfIndices = uint32_t(indices.size());

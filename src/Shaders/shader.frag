@@ -1,6 +1,10 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : require
 
+#define PI		3.1415926535897932384626433832795
+#define E		2.7182818284590452353602874713526
+#define EPSILON 0.0000000000000000000000000000001
+
 // Bring in the values from the vertex shader
 layout (location = 0) in vec2 inTexCoord;
 layout (location = 1) in vec3 inPosition;
@@ -24,22 +28,62 @@ layout (set = 1, binding = 2) uniform sampler2D textureNormalMap[];
 layout(set = 2, binding = 0, std140) uniform LightBuffer { 
     vec3 lightPosition;
 	vec3 lightColour;
-} lights;
+} light;
 
 // The screen colour output
 layout (location = 0) out vec4 outColour;
 
 void main()
 {
-	// Calculate the view direction and normalize
+	// Roughness
+	float roughness = texture(textureSpecular[inMatID], inTexCoord).g * texture(textureSpecular[inMatID], inTexCoord).g;
+
+	// Metalness
+	float metalness = texture(textureSpecular[inMatID], inTexCoord).b;
+
+	// Diffuse
+	vec3 diffuse = texture(textureColour[inMatID], inTexCoord).rgb;
+
+	// Normal map
+	vec3 normal = normalize(inNormal);
+
+	// Light direction
+	vec3 lightDirection = normalize(light.lightPosition - inPosition);
+
+	// View direction
 	vec3 viewDirection = normalize(view.cameraPosition - inPosition);
 
-	//vec3 lightDirection = normalize(lights.lights[0].lightPosition - inPosition);
+	// Half vector
+	vec3 halfVector = normalize(0.5 * (viewDirection + lightDirection));
+
+	// Ambient
+	vec3 ambient = vec3(0.02,0.02,0.02) * diffuse;
+
+	// Geometric term 
+	float nDh = max(0, dot(normal, halfVector));
+	float nDv = max(0, dot(normal, viewDirection));
+	float nDl = max(0, dot(normal, lightDirection));
+	float G = min(1, min(2 * ((nDh * nDv) / (dot(viewDirection, halfVector) + EPSILON)) , 2 * ((nDh * nDl) / (dot(viewDirection, halfVector) + EPSILON))));
 	
-	// This is the normal
-	vec3 normal = normalize(inNormal).rgb;
+	// Normal distribution function
+	float top = pow(E, (nDh * nDh - 1) / ((roughness * roughness) * (nDh * nDh)));
+	float bot = PI * (roughness * roughness) * pow(nDh, 4);
+	float D = top / (bot + EPSILON);
+
+	// Fresnel (Schlick approximation)
+	vec3 F0 = (1-metalness) * vec3(0.04, 0.04, 0.04) + (metalness * diffuse);
+	vec3 F = F0 + (1 - F0) * pow((1 - dot(halfVector, viewDirection)), 5);
+
+	// Diffuse (Adjusted)
+	vec3 lDiffuse = (diffuse / PI) * (vec3(1, 1, 1) - F) * (1 - metalness);
+
+	// Specular term
+	vec3 brdf = lDiffuse + ( ( D * F * G ) / ( 4 * nDv * nDl + EPSILON) ) ;
+
+	// Rendering equation 
+	// Out = Emissive + Ambient + BRDF * Light Colour * clampedDot(normal, light direction)
+	vec3 pixelColour = ambient + (brdf * light.lightColour * nDl);
 
 	// Output the colour
-	outColour = vec4(lights.lightColour.rgb, 1.f);
-	//outColour = vec4(texture(textureColour[inMatID], vec2(inTexCoord.x, inTexCoord.y)).rgb, 1.f);
+	outColour = vec4(pixelColour, 1.f);
 }

@@ -444,7 +444,7 @@ int main() {
         // TODO: Load all the lighting from the fbx model
         // (Use a dummy set of values for now)
         LightingData light;
-        light.lightColour = glm::vec3(1, 0, 1);
+        light.lightColour = glm::vec3(1, 1, 1);
         light.lightPosition = glm::vec3(5,5,5);
 
         std::cout << "Num meshes: " << fbxScene.meshes.size() << std::endl;

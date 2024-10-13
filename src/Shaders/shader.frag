@@ -17,6 +17,8 @@ layout(set = 0, binding = 0) uniform worldView
 
 // The texture uniforms (Indexed by material ID)
 layout (set = 1, binding = 0) uniform sampler2D textureColour[];
+layout (set = 1, binding = 1) uniform sampler2D textureSpecular[];
+layout (set = 1, binding = 2) uniform sampler2D textureNormalMap[];
 
 // The screen colour output
 layout (location = 0) out vec4 outColor;
@@ -30,5 +32,5 @@ void main()
 	vec3 normal = normalize(inNormal).rgb;
 
 	// Output the colour
-	outColor = vec4(texture(textureColour[inMatID], vec2(inTexCoord.x, inTexCoord.y)).rgb, 1.f);
+	outColor = vec4(texture(textureSpecular[inMatID], vec2(inTexCoord.x, inTexCoord.y)).rgb, 1.f);
 }

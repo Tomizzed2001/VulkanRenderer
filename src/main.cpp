@@ -197,11 +197,17 @@ namespace {
     /// <param name="app">Application context</param>
     /// <param name="pool">Descriptor pool</param>
     /// <param name="layout">Descriptor set layout</param>
-    /// <param name="images">The images to go into the descriptor</param>
+    /// <param name="diffuseImages">The colour / diffuse images to go into the descriptor</param>
+    /// <param name="specularImages">The specular images to go into the descriptor</param>
+    /// <param name="normalMapImages">The normal map images to go into the descriptor</param>
     /// <param name="sampler">The sampler to be used</param>
     /// <returns>Image descriptor set</returns>
     VkDescriptorSet createBindlessImageDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout,
-        std::vector<utility::ImageSet>& images, VkSampler& sampler);
+        std::vector<utility::ImageSet>& diffuseImages,
+        std::vector<utility::ImageSet>& specularImages,
+        std::vector<utility::ImageSet>& normalMapImages,
+        VkSampler& sampler
+    );
 
     /// <summary>
     /// Updates the world view matrices
@@ -350,20 +356,52 @@ int main() {
         fbx::Scene fbxScene = fbx::loadFBXFile("SunTemple/SunTemple.fbx");
 
         // Load all textures from the fbx model
-        std::vector<utility::ImageSet> textures;
+        // Load colour (diffuse) textures in
+        std::vector<utility::ImageSet> colourTextures;
         for (fbx::Texture texture : fbxScene.diffuseTextures) {
             // If texture is not empty
             if (texture.isEmpty) {
-                textures.emplace_back(utility::createPNGTextureImageSet(application, paths::textureFillPath, allocator, commandPool));
+                colourTextures.emplace_back(utility::createPNGTextureImageSet(application, paths::textureFillPath, allocator, commandPool));
             }
             // If texture is a dds texture
             else if (texture.filePath.ends_with(".dds")) {
-                textures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+                colourTextures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
             }
             else if (texture.filePath.ends_with(".png") || texture.filePath.ends_with(".jpg")) {
-                textures.emplace_back(utility::createPNGTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+                colourTextures.emplace_back(utility::createPNGTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
             }
         }
+        // Load specular textures in
+        std::vector<utility::ImageSet> specularTextures;
+        for (fbx::Texture texture : fbxScene.specularTextures) {
+            // If texture is not empty
+            if (texture.isEmpty) {
+                specularTextures.emplace_back(utility::createPNGTextureImageSet(application, paths::textureFillPath, allocator, commandPool));
+            }
+            // If texture is a dds texture
+            else if (texture.filePath.ends_with(".dds")) {
+                specularTextures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+            }
+            else if (texture.filePath.ends_with(".png") || texture.filePath.ends_with(".jpg")) {
+                specularTextures.emplace_back(utility::createPNGTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+            }
+        }
+        // Load normal map textures in
+        std::vector<utility::ImageSet> normalTextures;
+        for (fbx::Texture texture : fbxScene.normalTextures) {
+            // If texture is not empty
+            if (texture.isEmpty) {
+                normalTextures.emplace_back(utility::createPNGTextureImageSet(application, paths::textureFillPath, allocator, commandPool));
+            }
+            // If texture is a dds texture
+            else if (texture.filePath.ends_with(".dds")) {
+                normalTextures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+            }
+            else if (texture.filePath.ends_with(".png") || texture.filePath.ends_with(".jpg")) {
+                normalTextures.emplace_back(utility::createPNGTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+            }
+        }
+
 
         // Load all meshes from the fbx model (Separate the meshes that use alpha textures)
         std::vector<model::Mesh> meshes;
@@ -372,7 +410,7 @@ int main() {
             // Check all materials of the mesh to see if they require alpha testing
             bool alpha = false;
             for (int texID = 0; texID < mesh.materials.size(); texID++) {
-                if (textures[mesh.materials[texID]].isAlpha) {
+                if (colourTextures[mesh.materials[texID]].isAlpha) {
                     alpha = true;
                     break;
                 }
@@ -411,7 +449,7 @@ int main() {
 
         // Create and initialise the texture descriptor sets
         VkDescriptorSet bindlessTextureDescriptorSet = createBindlessImageDescriptorSet(application, descriptorPool, 
-            textureDescriptorSetLayout, textures, sampler);
+            textureDescriptorSetLayout, colourTextures, specularTextures, normalTextures, sampler);
 
         std::cout << "Finished loading texture descriptor sets" << std::endl;
 
@@ -612,11 +650,17 @@ int main() {
         vkDestroySampler(application.logicalDevice, sampler, nullptr);
         vmaDestroyImage(allocator, depthBuffer.image, depthBuffer.allocation);
         vkDestroyImageView(application.logicalDevice, depthBuffer.imageView, nullptr);
-        /*
-        */
-        for (size_t i = 0; i < textures.size(); i++) {
-            vmaDestroyImage(allocator, textures[i].image, textures[i].allocation);
-            vkDestroyImageView(application.logicalDevice, textures[i].imageView, nullptr);
+        for (size_t i = 0; i < colourTextures.size(); i++) {
+            vmaDestroyImage(allocator, colourTextures[i].image, colourTextures[i].allocation);
+            vkDestroyImageView(application.logicalDevice, colourTextures[i].imageView, nullptr);
+        }
+        for (size_t i = 0; i < specularTextures.size(); i++) {
+            vmaDestroyImage(allocator, specularTextures[i].image, specularTextures[i].allocation);
+            vkDestroyImageView(application.logicalDevice, specularTextures[i].imageView, nullptr);
+        }
+        for (size_t i = 0; i < normalTextures.size(); i++) {
+            vmaDestroyImage(allocator, normalTextures[i].image, normalTextures[i].allocation);
+            vkDestroyImageView(application.logicalDevice, normalTextures[i].imageView, nullptr);
         }
 
         // Destroy pipeline related components
@@ -868,12 +912,23 @@ namespace {
         // Set the bindings for the descriptor
         // These are accessed in the shader as binding = n
         // All data passed into the shaders must have a binding
-        int const numberOfBindings = 1;
+        int const numberOfBindings = 3;
         VkDescriptorSetLayoutBinding bindings[numberOfBindings]{};
+        // Colour / Diffuse texture
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[0].descriptorCount = 512;         // MAX NUMBER OF BINDINGS
         bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        // Specular textures
+        bindings[1].binding = 1;
+        bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[1].descriptorCount = 512;         // MAX NUMBER OF BINDINGS
+        bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        // Normal map textures
+        bindings[2].binding = 2;
+        bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[2].descriptorCount = 512;         // MAX NUMBER OF BINDINGS
+        bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         // Set the info of the descriptor
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
@@ -1243,29 +1298,61 @@ namespace {
     }
 
     VkDescriptorSet createBindlessImageDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout,
-        std::vector<utility::ImageSet>& images, VkSampler& sampler) {
+        std::vector<utility::ImageSet>& diffuseImages,
+        std::vector<utility::ImageSet>& specularImages,
+        std::vector<utility::ImageSet>& normalMapImages,
+        VkSampler& sampler
+    ) {
         // Create the world descriptor set and fill with the information
         VkDescriptorSet descriptorSet = createDescriptorSet(app, pool, layout);
 
         // Image info (Max number of textures in descriptor is 512)
-        std::vector<VkDescriptorImageInfo> imageInfos(images.size());
-        for (size_t i = 0; i < images.size(); i++) {
-            imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfos[i].imageView = images[i].imageView;
-            imageInfos[i].sampler = sampler;
+        std::vector<VkDescriptorImageInfo> diffuseImageInfos(diffuseImages.size());
+        for (size_t i = 0; i < diffuseImages.size(); i++) {
+            diffuseImageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            diffuseImageInfos[i].imageView = diffuseImages[i].imageView;
+            diffuseImageInfos[i].sampler = sampler;
+        }
+        std::vector<VkDescriptorImageInfo> specularImageInfos(specularImages.size());
+        for (size_t i = 0; i < specularImages.size(); i++) {
+            specularImageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            specularImageInfos[i].imageView = specularImages[i].imageView;
+            specularImageInfos[i].sampler = sampler;
+        }
+        std::vector<VkDescriptorImageInfo> normalMapImageInfos(normalMapImages.size());
+        for (size_t i = 0; i < normalMapImages.size(); i++) {
+            normalMapImageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            normalMapImageInfos[i].imageView = normalMapImages[i].imageView;
+            normalMapImageInfos[i].sampler = sampler;
         }
 
+
         // Descritor info set up
-        VkWriteDescriptorSet descriptor{};
-        descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor.dstSet = descriptorSet;
-        descriptor.dstBinding = 0;      // Binding in the shader
-        descriptor.descriptorCount = static_cast<uint32_t>(imageInfos.size());
-        descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptor.pImageInfo = imageInfos.data();
+        VkWriteDescriptorSet descriptor[3] {};
+        // Colour / Diffuse
+        descriptor[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor[0].dstSet = descriptorSet;
+        descriptor[0].dstBinding = 0;      // Binding in the shader
+        descriptor[0].descriptorCount = static_cast<uint32_t>(diffuseImageInfos.size());
+        descriptor[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor[0].pImageInfo = diffuseImageInfos.data();
+        // Specular
+        descriptor[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor[1].dstSet = descriptorSet;
+        descriptor[1].dstBinding = 1;      // Binding in the shader
+        descriptor[1].descriptorCount = static_cast<uint32_t>(specularImageInfos.size());
+        descriptor[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor[1].pImageInfo = specularImageInfos.data();
+        // Normal map
+        descriptor[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor[2].dstSet = descriptorSet;
+        descriptor[2].dstBinding = 2;      // Binding in the shader
+        descriptor[2].descriptorCount = static_cast<uint32_t>(normalMapImageInfos.size());
+        descriptor[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor[2].pImageInfo = normalMapImageInfos.data();
 
         // Update / initialise
-        vkUpdateDescriptorSets(app.logicalDevice, 1, &descriptor, 0, nullptr);
+        vkUpdateDescriptorSets(app.logicalDevice, 3, descriptor, 0, nullptr);
 
         return descriptorSet;
     }

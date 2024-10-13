@@ -26,7 +26,6 @@
 #include "model.hpp"
 #include "FBXFileLoader.hpp"
 
-
 namespace {
 
     struct CameraInfo {
@@ -42,6 +41,12 @@ namespace {
     struct WorldView {
         glm::mat4 projectionCameraMatrix;
         glm::vec3 cameraPosition;
+    };
+
+    struct LightingData {
+        //glm::mat4 lightDirectionMatrix;
+        alignas(16) glm::vec3 lightPosition;
+        alignas(16) glm::vec3 lightColour;
     };
 
     namespace paths {
@@ -106,6 +111,13 @@ namespace {
     /// <param name="app">The context of the application</param>
     /// <returns>Descriptor set layout</returns>
     VkDescriptorSetLayout createTextureDescriptorSetLayout(app::AppContext& app);
+
+    /// <summary>
+    /// Creates a descriptor set layout to feed into the pipeline
+    /// </summary>
+    /// <param name="app">The context of the application</param>
+    /// <returns>Descriptor set layout</returns>
+    VkDescriptorSetLayout createLightDescriptorSetLayout(app::AppContext& app);
 
     /// <summary>
     /// Creates a pipeline layout prior to making a pipeline
@@ -176,20 +188,10 @@ namespace {
     /// <param name="pool">Descriptor pool</param>
     /// <param name="layout">Descriptor set layout</param>
     /// <param name="buffer">The buffer storing the data</param>
+    /// <param name="descriptorType">The type of descriptor it will be</param>
     /// <returns></returns>
-    VkDescriptorSet createBufferDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout, VkBuffer& buffer);
-
-    /// <summary>
-    /// Creates a descriptor set for an image and initialises it
-    /// </summary>
-    /// <param name="app">Application context</param>
-    /// <param name="pool">Descriptor pool</param>
-    /// <param name="layout">Descriptor set layout</param>
-    /// <param name="imageView">The VkImage view</param>
-    /// <param name="sampler">The sampler to be used</param>
-    /// <returns>Image descriptor set</returns>
-    VkDescriptorSet createImageDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout,
-        VkImageView& imageView, VkSampler& sampler);
+    VkDescriptorSet createBufferDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout, 
+        VkBuffer& buffer, VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
     /// <summary>
     /// Creates a descriptor set to contain multiple images and initialises it
@@ -216,6 +218,17 @@ namespace {
     /// <param name="screenAspect">The aspect value of the swapchain</param>
     /// <param name="cameraInfo">The camera info struct defining location and view</param>
     void updateWorldUniforms(WorldView& worldUniform, float screenAspect, CameraInfo& cameraInfo);
+
+    /// <summary>
+    /// Updates the lighting uniforms
+    /// </summary>
+    /// <param name="app">The application context</param>
+    /// <param name="lightingBuffer">The lighting buffer</param>
+    /// <param name="lightData">The data holding the lighting info</param>
+    /// <param name="commandPool">The command pool</param>
+    void updateLightingUniforms(app::AppContext& app, VkBuffer lightingBuffer, LightingData lightData,
+        VkCommandPool commandPool);
+
 
     /// <summary>
     /// Recreates the swapchain
@@ -248,6 +261,7 @@ namespace {
         VkPipelineLayout pipelineLayout,                            // Pipelines
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
         VkDescriptorSet textureDescriptorSet,                       // Texture descriptors
+        VkDescriptorSet lightingDescriptorSet,                      // Lighting descriptors
         std::vector<model::Mesh>& meshes,                           // Mesh data
         std::vector<model::Mesh>& alphaMeshes,                      // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
@@ -314,11 +328,14 @@ int main() {
         VkDescriptorSetLayout worldDescriptorSetLayout = createWorldDescriptorSetLayout(application);
         // Texture descriptor set layout contains all the material textures
         VkDescriptorSetLayout textureDescriptorSetLayout = createTextureDescriptorSetLayout(application);
+        // Lighting descriptor set layout contains all the lighting data
+        VkDescriptorSetLayout lightDescriptorSetLayout = createLightDescriptorSetLayout(application);
 
         // Create a vector of the descriptor sets to use
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
         descriptorSetLayouts.emplace_back(worldDescriptorSetLayout);
         descriptorSetLayouts.emplace_back(textureDescriptorSetLayout);
+        descriptorSetLayouts.emplace_back(lightDescriptorSetLayout);
 
         // Create a pipeline layout
         VkPipelineLayout pipelineLayout = createPipelineLayout(application, descriptorSetLayouts);
@@ -402,7 +419,6 @@ int main() {
             }
         }
 
-
         // Load all meshes from the fbx model (Separate the meshes that use alpha textures)
         std::vector<model::Mesh> meshes;
         std::vector<model::Mesh> alphaMeshes;
@@ -425,6 +441,12 @@ int main() {
             }
         }
 
+        // TODO: Load all the lighting from the fbx model
+        // (Use a dummy set of values for now)
+        LightingData light;
+        light.lightColour = glm::vec3(1, 0, 1);
+        light.lightPosition = glm::vec3(5,5,5);
+
         std::cout << "Num meshes: " << fbxScene.meshes.size() << std::endl;
         std::cout << "Num materials: " << fbxScene.materials.size() << std::endl;
         std::cout << "Num colour textures: " << fbxScene.diffuseTextures.size() << std::endl;
@@ -445,13 +467,24 @@ int main() {
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
         // Create and initialise the world descriptor set
-        VkDescriptorSet worldDescriptorSet = createBufferDescriptorSet(application, descriptorPool, worldDescriptorSetLayout, worldUniformBuffer.buffer);
+        VkDescriptorSet worldDescriptorSet = createBufferDescriptorSet(application, descriptorPool,
+            worldDescriptorSetLayout, worldUniformBuffer.buffer);
 
         // Create and initialise the texture descriptor sets
         VkDescriptorSet bindlessTextureDescriptorSet = createBindlessImageDescriptorSet(application, descriptorPool, 
             textureDescriptorSetLayout, colourTextures, specularTextures, normalTextures, sampler);
 
-        std::cout << "Finished loading texture descriptor sets" << std::endl;
+        // Create the lighting uniform buffer
+        utility::BufferSet lightingUniformBuffer = utility::createBuffer(allocator, sizeof(LightingData),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+
+        // Set the data for the lighting buffer
+        updateLightingUniforms(application, lightingUniformBuffer.buffer, light, commandPool);
+
+        // Create and initialise the lighting descriptor sets
+        VkDescriptorSet lightDescriptorSet = createBufferDescriptorSet(application, descriptorPool,
+            lightDescriptorSetLayout, lightingUniformBuffer.buffer);
 
         // Create the command buffers - one for each of the swapchain framebuffers
         std::vector<VkCommandBuffer> commandBuffers;
@@ -594,6 +627,7 @@ int main() {
                 pipelineLayout,
                 worldDescriptorSet,
                 bindlessTextureDescriptorSet,
+                lightDescriptorSet,
                 meshes,
                 alphaMeshes,
                 meshOffsets,
@@ -635,6 +669,7 @@ int main() {
             alphaMeshes[i].vertexMaterials.~BufferSet();
             alphaMeshes[i].indices.~BufferSet();
         }
+        lightingUniformBuffer.~BufferSet();
         
         // Destroy command related components
         vkDestroyDescriptorPool(application.logicalDevice, descriptorPool, nullptr);
@@ -674,6 +709,7 @@ int main() {
         // Destroy descriptor set layouts
         vkDestroyDescriptorSetLayout(application.logicalDevice, worldDescriptorSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, textureDescriptorSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(application.logicalDevice, lightDescriptorSetLayout, nullptr);
 
         // Destroy Renderpass
         vkDestroyRenderPass(application.logicalDevice, renderPass, nullptr);
@@ -929,6 +965,38 @@ namespace {
         bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[2].descriptorCount = 512;         // MAX NUMBER OF BINDINGS
         bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        // Set the info of the descriptor
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
+        descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        descriptorSetLayoutInfo.bindingCount = numberOfBindings;
+        descriptorSetLayoutInfo.pBindings = bindings;
+        descriptorSetLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT;
+
+        VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+        if (vkCreateDescriptorSetLayout(app.logicalDevice, &descriptorSetLayoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor set layout");
+        }
+
+        return descriptorSetLayout;
+    }
+
+    VkDescriptorSetLayout createLightDescriptorSetLayout(app::AppContext& app) {
+        // Set the bindings for the descriptor
+        // These are accessed in the shader as binding = n
+        // All data passed into the shaders must have a binding
+        int const numberOfBindings = 1;
+        VkDescriptorSetLayoutBinding bindings[numberOfBindings]{};
+        // Number of lights in the descriptor
+        //bindings[0].binding = 0;
+        //bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        //bindings[0].descriptorCount = 1;         // MAX NUMBER OF BINDINGS
+        //bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        // Lighting data
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[0].descriptorCount = 1;         // MAX NUMBER OF LIGHTS
+        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         // Set the info of the descriptor
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
@@ -1247,7 +1315,8 @@ namespace {
         return descriptorSet;
     }
 
-    VkDescriptorSet createBufferDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout, VkBuffer& buffer) {
+    VkDescriptorSet createBufferDescriptorSet(app::AppContext& app, VkDescriptorPool pool, 
+        VkDescriptorSetLayout layout, VkBuffer& buffer, VkDescriptorType descriptorType) {
         // Create the world descriptor set and fill with the information
         VkDescriptorSet descriptorSet = createDescriptorSet(app, pool, layout);
 
@@ -1262,34 +1331,8 @@ namespace {
         descriptor.dstSet = descriptorSet;
         descriptor.dstBinding = 0;      // Binding in the shader
         descriptor.descriptorCount = 1;
-        descriptor.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptor.descriptorType = descriptorType;
         descriptor.pBufferInfo = &bufferInfo;
-
-        // Update / initialise
-        vkUpdateDescriptorSets(app.logicalDevice, 1, &descriptor, 0, nullptr);
-
-        return descriptorSet;
-    }
-
-    VkDescriptorSet createImageDescriptorSet(app::AppContext& app, VkDescriptorPool pool, VkDescriptorSetLayout layout, 
-        VkImageView& imageView, VkSampler& sampler) {
-        // Create the world descriptor set and fill with the information
-        VkDescriptorSet descriptorSet = createDescriptorSet(app, pool, layout);
-
-        // Image info
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = imageView;
-        imageInfo.sampler = sampler;
-
-        // Descritor info set up
-        VkWriteDescriptorSet descriptor{};
-        descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor.dstSet = descriptorSet;
-        descriptor.dstBinding = 0;      // Binding in the shader
-        descriptor.descriptorCount = 1;
-        descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptor.pImageInfo = &imageInfo;
 
         // Update / initialise
         vkUpdateDescriptorSets(app.logicalDevice, 1, &descriptor, 0, nullptr);
@@ -1372,6 +1415,55 @@ namespace {
         worldUniform.cameraPosition = cameraInfo.position;
     }
 
+    void updateLightingUniforms(app::AppContext& app, VkBuffer lightingBuffer, LightingData lightData,
+        VkCommandPool commandPool) {
+        
+        // Create the command buffer
+        VkCommandBuffer commandBuffer = utility::createCommandBuffer(app, commandPool);
+
+        // Begin recording into the command buffer
+        VkCommandBufferBeginInfo recordInfo{};
+        recordInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        if (vkBeginCommandBuffer(commandBuffer, &recordInfo) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to start command buffer recording.");
+        }
+
+        // Place the data into the uniform buffer
+        vkCmdUpdateBuffer(commandBuffer, lightingBuffer, 0, sizeof(LightingData), &lightData);
+
+        // Transition to shader readable
+        utility::createBufferBarrier(lightingBuffer, VK_WHOLE_SIZE,
+            VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_UNIFORM_READ_BIT,
+            VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+            commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+        );
+
+        // End the recording
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to end command buffer recording.");
+        }
+
+        // Use a fence to ensure that transfers are complete before moving on
+        VkFence submitComplete = utility::createFence(app);
+
+        // Submit the recorded commands for execution
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+        if (vkQueueSubmit(app.graphicsQueue, 1, &submitInfo, submitComplete)) {
+            throw std::runtime_error("Failed to submit recorded commands.");
+        }
+
+        // Wait for the fence before clean up
+        if (vkWaitForFences(app.logicalDevice, 1, &submitComplete, VK_TRUE, std::numeric_limits<std::uint64_t>::max())) {
+            throw std::runtime_error("Fence failed to return as complete.");
+        }
+
+        vkFreeCommandBuffers(app.logicalDevice, commandPool, 1, &commandBuffer);
+        vkDestroyFence(app.logicalDevice, submitComplete, nullptr);
+    }
+
     void recreateSwapchain(app::AppContext& app) {
         // Wait for the device to idle
         vkDeviceWaitIdle(app.logicalDevice);
@@ -1403,6 +1495,7 @@ namespace {
         VkPipelineLayout pipelineLayout,                            // Pipelines
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
         VkDescriptorSet textureDescriptorSet,                       // Texture descriptors
+        VkDescriptorSet lightingDescriptorSet,                      // Lighting descriptors
         std::vector<model::Mesh>& meshes,                           // Mesh data
         std::vector<model::Mesh>& alphaMeshes,                      // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
@@ -1460,6 +1553,7 @@ namespace {
         // Bind the uniforms to the pipeline
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &worldDescriptorSet, 0, nullptr);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &textureDescriptorSet, 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 2, 1, &lightingDescriptorSet, 0, nullptr);
 
         // Draw each separate mesh to screen
         for (size_t i = 0; i < meshes.size(); i++) {

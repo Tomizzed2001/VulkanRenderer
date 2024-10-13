@@ -20,17 +20,26 @@ layout (set = 1, binding = 0) uniform sampler2D textureColour[];
 layout (set = 1, binding = 1) uniform sampler2D textureSpecular[];
 layout (set = 1, binding = 2) uniform sampler2D textureNormalMap[];
 
+// The lighting uniform
+layout(set = 2, binding = 0, std140) uniform LightBuffer { 
+    vec3 lightPosition;
+	vec3 lightColour;
+} lights;
+
 // The screen colour output
-layout (location = 0) out vec4 outColor;
+layout (location = 0) out vec4 outColour;
 
 void main()
 {
 	// Calculate the view direction and normalize
 	vec3 viewDirection = normalize(view.cameraPosition - inPosition);
+
+	//vec3 lightDirection = normalize(lights.lights[0].lightPosition - inPosition);
 	
 	// This is the normal
 	vec3 normal = normalize(inNormal).rgb;
 
 	// Output the colour
-	outColor = vec4(texture(textureSpecular[inMatID], vec2(inTexCoord.x, inTexCoord.y)).rgb, 1.f);
+	outColour = vec4(lights.lightColour.rgb, 1.f);
+	//outColour = vec4(texture(textureColour[inMatID], vec2(inTexCoord.x, inTexCoord.y)).rgb, 1.f);
 }

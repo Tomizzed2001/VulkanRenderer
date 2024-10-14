@@ -45,7 +45,20 @@ void main()
 	vec3 diffuse = texture(textureColour[inMatID], inTexCoord).rgb;
 
 	// Normal map
-	vec3 normal = normalize(inNormal);
+	vec3 normal = texture(textureNormalMap[inMatID], inTexCoord).rgb;
+	// Map to the 0-1 range
+	normal = normal * 2.0 - 1.0;
+	// Flip the green channel as texture is in directX format
+	normal.g = normal.g * -1;
+
+	// Create the TBN matrix
+	vec3 T = normalize(inTangent.xyz);
+	vec3 N = normalize(inNormal);
+	vec3 B = normalize(inTangent.w * (cross(N, T)));
+	mat3 TBN = mat3(T,B,N);
+
+	// Use the normal map for the normal
+	normal = normalize(TBN * normal);
 
 	// Light direction
 	vec3 lightDirection = normalize(light.lightPosition - inPosition);
@@ -57,7 +70,7 @@ void main()
 	vec3 halfVector = normalize(0.5 * (viewDirection + lightDirection));
 
 	// Ambient
-	vec3 ambient = vec3(0.02,0.02,0.02) * diffuse;
+	vec3 ambient = vec3(0.2,0.2,0.2) * diffuse;
 
 	// Geometric term 
 	float nDh = max(0, dot(normal, halfVector));

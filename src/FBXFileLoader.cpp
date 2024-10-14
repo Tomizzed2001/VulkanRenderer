@@ -181,23 +181,19 @@ namespace fbx {
 
         // Get the number of triangles in the mesh and all the triangles
         int numTriangles = inMesh->GetPolygonCount();
-        //std::cout << "Triangles: " << numTriangles << std::endl;
 
         // Get the number of vertices and all vertices
         int numVertices = inMesh->GetControlPointsCount();
         FbxVector4* fbxVertices = inMesh->GetControlPoints();
-        //std::cout << "Vertices: " << numVertices << std::endl;
 
         // Get the number of indices and all indices
         int numIndices = inMesh->GetPolygonVertexCount();
-        int* indices = inMesh->GetPolygonVertices();
-
-        //std::cout << "Indices: " << numIndices << std::endl;
+        int* fbxIndices = inMesh->GetPolygonVertices();
 
         // Get the normals for the mesh
-        FbxArray<FbxVector4> normals;
+        FbxArray<FbxVector4> fbxNormals;
         // Generate the normals (if there is none) and store them
-        if (!(inMesh->GenerateNormals() && inMesh->GetPolygonVertexNormals(normals))) {
+        if (!(inMesh->GenerateNormals() && inMesh->GetPolygonVertexNormals(fbxNormals))) {
             throw std::runtime_error("Failed to gather mesh normals");
         }
 
@@ -205,98 +201,133 @@ namespace fbx {
         // For now use only the first uv set in the mesh
         FbxStringList uvSets;
         inMesh->GetUVSetNames(uvSets);
-        FbxArray<FbxVector2> uvs;
-        if (!inMesh->GetPolygonVertexUVs(uvSets.GetStringAt(0), uvs)) {
+        FbxArray<FbxVector2> fbxUVs;
+        if (!inMesh->GetPolygonVertexUVs(uvSets.GetStringAt(0), fbxUVs)) {
             throw std::runtime_error("Failed to gather mesh texture coordinates.");
         }
 
-        //std::cout << "UVs: " << uvs.Size() << std::endl;
+        // Remove the translation component for the  
+        glm::mat4 normalTransform = transform;
+        normalTransform[3] = glm::vec4(0, 0, 0, 1);
 
-        // Check for duplicate vertices and re-index them
-        std::vector<int> seenIndex(numIndices, -1);
-        std::unordered_map<glm::vec3, std::uint32_t> seenVertices;
+        std::vector<glm::vec3> positions;
+        std::vector<glm::vec2> uvs;
+        std::vector<glm::vec3> normals;
+        std::vector<uint32_t> materialIDs;
+        std::vector<uint32_t> indices;
 
-        for (int i = 0; i < numIndices; i++) {  // For each index
+        // For each index
+        for (int i = 0; i < numIndices; i++) {  
             // Get the index
-            int index = indices[i];
+            int index = fbxIndices[i];
 
             // Get the vertex position
             glm::vec3 vertex = glm::vec3(fbxVertices[index][0], fbxVertices[index][1], fbxVertices[index][2]);
 
             // Get the vertex normal
-            glm::vec3 normal = glm::vec3(normals[i][0], normals[i][1], normals[i][2]);
+            glm::vec3 normal = glm::vec3(fbxNormals[i][0], fbxNormals[i][1], fbxNormals[i][2]);
 
             // Get the vertex texture co-ordinate
-            glm::vec2 uv = glm::vec2(uvs[i][0], uvs[i][1]);
+            glm::vec2 uv = glm::vec2(fbxUVs[i][0], fbxUVs[i][1]);
 
             // Add the new vertex position and normal
-            outMesh.vertexPositions.emplace_back(transform * glm::vec4(vertex, 1));
-            outMesh.vertexNormals.emplace_back(transform * glm::vec4(normal, 1));
-            outMesh.vertexTextureCoords.emplace_back(uv);
+            positions.emplace_back(transform * glm::vec4(vertex, 1));
+            normals.emplace_back(normalTransform * glm::vec4(normal, 1));
+            uvs.emplace_back(uv);
 
             // Store the newly assigned index
-            outMesh.vertexIndices.emplace_back(i);
-
-            /*
-            // If index has already been seen and re-indexed, use that one
-            if (seenIndex[index] != -1) {
-                outMesh.vertexIndices.emplace_back(seenIndex[index]);
-            }
-            // Index has not been found so find the vertex and re-index accordingly
-            else {
-                // Get the vertex position
-                glm::vec3 vertex = glm::vec4(fbxVertices[index][0], fbxVertices[index][1], fbxVertices[index][2], 1);
-
-                // Get the vertex normal
-                glm::vec3 normal = glm::vec4(normals[index][0], normals[index][1], normals[index][2], 1);
-
-                // Get the vertex texture co-ordinate
-                glm::vec2 uv = glm::vec2(uvs[index][0], uvs[index][1]);
-
-                // Check if that position has been seen before
-                if (seenVertices.find(vertex) == seenVertices.end()) {
-                    // Add the new vertex position and normal
-                    outMesh.vertexPositions.emplace_back(transform * glm::vec4(vertex, 1));
-                    outMesh.vertexNormals.emplace_back(transform * glm::vec4(normal, 1));
-                    outMesh.vertexTextureCoords.emplace_back(uv);
-
-                    // Store the newly assigned index
-                    std::uint32_t newIndex = outMesh.vertexPositions.size() - 1;
-                    outMesh.vertexIndices.emplace_back(newIndex);
-
-                    // Add it to the map of seen vertices
-                    seenVertices[vertex] = newIndex;
-
-                    // Note that the index has been seen and remapped to a new index
-                    seenIndex[index] = newIndex;
-                }
-                else {
-                    // Get the already assigned index
-                    std::uint32_t newIndex = seenVertices.at(vertex);
-
-                    // Store the index
-                    outMesh.vertexIndices.emplace_back(newIndex);
-
-                    // Map the new index to the seen indices
-                    seenIndex[index] = newIndex;
-                }
-            }
-            
-            */
+            indices.emplace_back(i);
         }
-
-        // Calculate the per vertex tangents
-        outMesh.vertexTangents = calculateTangents(outMesh.vertexIndices, outMesh.vertexPositions, outMesh.vertexTextureCoords, outMesh.vertexNormals);
 
         // Calculate the per polygon material ids
         FbxLayerElementMaterial* materialElement = inMesh->GetElementMaterial();
         for (int i = 0; i < inMesh->GetPolygonCount(); i++) {
             // Material index for the current polygon
             int materialIndex = materialElement->GetIndexArray().GetAt(i);
-            outMesh.vertexMaterialIDs.emplace_back(materialIndices[materialIndex]);
-            outMesh.vertexMaterialIDs.emplace_back(materialIndices[materialIndex]);
-            outMesh.vertexMaterialIDs.emplace_back(materialIndices[materialIndex]);
+            materialIDs.emplace_back(materialIndices[materialIndex]);
+            materialIDs.emplace_back(materialIndices[materialIndex]);
+            materialIDs.emplace_back(materialIndices[materialIndex]);
         }
+
+        // Check if the mesh will benefit from redoing the indices
+        // Check for duplicate vertices and re-index them
+
+        
+        std::vector<int> seenIndex(indices.size(), -1);
+        std::unordered_map<glm::vec3, std::pair<uint32_t, uint32_t>> seenVertices;
+        std::vector<std::vector<std::uint32_t>> samePositionsArray;
+
+        for (size_t i = 0; i < indices.size(); i++) {
+            uint32_t index = indices[i];
+
+            // If index has already been seen and re-indexed, use that one
+            if (seenIndex[index] != -1) {
+                outMesh.vertexIndices.emplace_back(seenIndex[index]);
+            }
+            // Index has not been found so find the vertex and re-index accordingly
+            else {
+                // Check if that position has been seen before
+                if (seenVertices.find(positions[index]) == seenVertices.end()) {
+                    // New position found
+                    // Add the new vertex position normal and uv
+                    outMesh.vertexPositions.emplace_back(glm::vec4(positions[index], 1));
+                    outMesh.vertexNormals.emplace_back(glm::vec4(normals[index], 1));
+                    outMesh.vertexTextureCoords.emplace_back(uvs[index]);
+                    outMesh.vertexMaterialIDs.emplace_back(materialIDs[index]);
+
+                    // Store the newly assigned index
+                    std::uint32_t newIndex = outMesh.vertexPositions.size() - 1;
+                    outMesh.vertexIndices.emplace_back(newIndex);
+
+                    // Add it to the map of seen vertices
+                    samePositionsArray.emplace_back(std::vector<std::uint32_t>());
+                    samePositionsArray[samePositionsArray.size() - 1].emplace_back(newIndex);
+                    
+                    seenVertices[positions[index]] = std::pair<uint32_t, uint32_t>(newIndex, samePositionsArray.size() - 1);
+
+                    // Note that the index has been seen and remapped to a new index
+                    seenIndex[index] = newIndex;
+                }
+                else {
+                    // Position already exists
+                    // Get the already assigned index
+                    std::uint32_t newIndex = seenVertices.at(positions[index]).first;
+                    std::uint32_t vertexID = seenVertices.at(positions[index]).second;
+
+                    // Check that the uvs, normals and materials match up as well
+                    if ((outMesh.vertexTextureCoords[newIndex] != uvs[index]) || 
+                        outMesh.vertexNormals[newIndex] != normals[index] ||
+                        outMesh.vertexMaterialIDs[newIndex] != materialIDs[index]) {
+                        // If uvs or normals do not match
+                        // Add to index array as if its a new vertex
+                        outMesh.vertexPositions.emplace_back(glm::vec4(positions[index], 1));
+                        outMesh.vertexNormals.emplace_back(glm::vec4(normals[index], 1));
+                        outMesh.vertexTextureCoords.emplace_back(uvs[index]);
+                        outMesh.vertexMaterialIDs.emplace_back(materialIDs[index]);
+
+                        // Store the newly assigned index
+                        std::uint32_t oldIndex = newIndex;
+                        newIndex = outMesh.vertexPositions.size() - 1;
+                        outMesh.vertexIndices.emplace_back(newIndex);
+
+                        // Map the new index to the vertex
+                        samePositionsArray[vertexID].emplace_back(newIndex);
+
+                    }
+                    else {
+                        // Identical index so remap and store the index only
+                        // Store the index
+                        outMesh.vertexIndices.emplace_back(newIndex);
+
+                        // Map the new index to the seen indices
+                        seenIndex[index] = newIndex;
+                    }                    
+                }
+            }
+        }
+        
+        // Calculate the per vertex tangents
+        outMesh.vertexTangents = calculateTangents(outMesh.vertexIndices, outMesh.vertexPositions, outMesh.vertexTextureCoords, outMesh.vertexNormals);
 
         return outMesh;
     }
@@ -435,8 +466,11 @@ namespace fbx {
         std::vector<glm::vec3>& normals) {
 
         // Initialise an array to store all the different tangents for each vertex
-        std::vector<std::vector<glm::vec3>> vertexTriangleTangents(positions.size(), std::vector<glm::vec3>());
-        std::vector<std::vector<glm::vec3>> vertexTriangleBitangents(positions.size(), std::vector<glm::vec3>());
+        //std::vector<std::vector<glm::vec3>> vertexTriangleTangents(positions.size(), std::vector<glm::vec3>());
+        //std::vector<std::vector<glm::vec3>> vertexTriangleBitangents(positions.size(), std::vector<glm::vec3>());
+
+        std::vector<glm::vec3> vTangents(positions.size());
+        std::vector<glm::vec3> vBitangents(positions.size());
 
         // Visit each triangle in the mesh
         for (size_t i = 0; i < indices.size(); i += 3) {
@@ -463,36 +497,36 @@ namespace fbx {
             uvAC = uv2 - uv0;
 
             // Solve to find the unnormalized tangent vector of the triangle
-            glm::vec3 tangent = (1 / ((uvAB.x * uvAC.y) - (uvAC.x - uvAB.y))) * ((uvAC.y * AB) + (-uvAB.y * AC));
-            glm::vec3 bitangent = (1 / ((uvAB.x * uvAC.y) - (uvAC.x - uvAB.y))) * ((-uvAC.x * AB) + (uvAB.x * AC));
+            //glm::vec3 tangent = (1 / ((uvAB.x * uvAC.y) - (uvAC.x - uvAB.y))) * ((uvAC.y * AB) + (-uvAB.y * AC));
+            //glm::vec3 bitangent = (1 / ((uvAB.x * uvAC.y) - (uvAC.x - uvAB.y))) * ((-uvAC.x * AB) + (uvAB.x * AC));
 
+            float determinant = 1.0f / (uvAB.x * uvAC.y - uvAC.x * uvAB.y);
+            glm::vec3 tangent = determinant * (uvAC.y * AB - uvAB.y * AC);
+            glm::vec3 bitangent = determinant * (-uvAC.x * AB + uvAB.x * AC);
 
             // Tangent is the same for all vertices of the triangle so add to all of them
-            vertexTriangleTangents[indices[i]].emplace_back(tangent);
-            vertexTriangleTangents[indices[i + 1]].emplace_back(tangent);
-            vertexTriangleTangents[indices[i + 2]].emplace_back(tangent);
+            vTangents[indices[i]] += tangent;
+            vTangents[indices[i + 1]] += tangent;
+            vTangents[indices[i + 2]] += tangent;
 
-            vertexTriangleBitangents[indices[i]].emplace_back(bitangent);
-            vertexTriangleBitangents[indices[i + 1]].emplace_back(bitangent);
-            vertexTriangleBitangents[indices[i + 2]].emplace_back(bitangent);
+            vBitangents[indices[i]] += bitangent;
+            vBitangents[indices[i + 1]] += bitangent;
+            vBitangents[indices[i + 2]] += bitangent;
         }
 
         // Average the tangents for all vertices
         std::vector<glm::vec4> tangents;
-        for (size_t i = 0; i < vertexTriangleTangents.size(); i++) {
-            glm::vec3 tangent = glm::vec3(0, 0, 0);
-            glm::vec3 biTangent = glm::vec3(0, 0, 0);
-            for (size_t j = 0; j < vertexTriangleTangents[i].size(); j++) {
-                tangent = tangent + vertexTriangleTangents[i][j];
-                biTangent = biTangent + vertexTriangleBitangents[i][j];
-            }
+        for (size_t i = 0; i < vTangents.size(); i++) {
+            glm::vec3 normal = normals[i];
 
+            glm::vec3 tangent = vTangents[i];
+            glm::vec3 bitangent = vBitangents[i];
             // Orthogonalize the tangent and normalise the output
-            tangent = glm::normalize(tangent - normals[i] * glm::dot(normals[i], tangent));
+            tangent = glm::normalize(tangent - normal * glm::dot(normal, tangent));
 
             // Calculate the handedness of the bitangent
             int handedness;
-            if (glm::dot(glm::cross(normals[i], tangent), biTangent) < 0) {
+            if (glm::dot(glm::cross(normal, tangent), bitangent) < 0) {
                 handedness = -1;
             }
             else {

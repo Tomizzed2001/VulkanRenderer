@@ -299,7 +299,7 @@ int main() {
 
         // Set up the player camera state
         CameraInfo playerCamera;
-        playerCamera.position = glm::vec3(0.0, 0.3, 1.0);
+        playerCamera.position = glm::vec3(-0.2972, 7.3100, -11.9532);
         playerCamera.worldCameraMatrix = playerCamera.worldCameraMatrix * glm::translate(playerCamera.position);
 
         // Set up the GLFW inputs
@@ -445,7 +445,7 @@ int main() {
         // (Use a dummy set of values for now)
         LightingData light;
         light.lightColour = glm::vec3(1, 1, 1);
-        light.lightPosition = glm::vec3(5,5,5);
+        light.lightPosition = glm::vec3(-0.2972, 7.3100, -11.9532);
 
         std::cout << "Num meshes: " << fbxScene.meshes.size() << std::endl;
         std::cout << "Num materials: " << fbxScene.materials.size() << std::endl;

@@ -382,11 +382,11 @@ int main() {
             }
             // If texture is a dds texture
             else if (texture.filePath.ends_with(".dds")) {
-                colourTextures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
+                colourTextures.emplace_back(utility::createDDSTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool, true));
             }
             else if (texture.filePath.ends_with(".png") || texture.filePath.ends_with(".jpg")) {
                 colourTextures.emplace_back(utility::createPNGTextureImageSet(application, texture.filePath.c_str(), allocator, commandPool));
-            }
+            } 
         }
         // Load specular textures in
         std::vector<utility::ImageSet> specularTextures;
@@ -441,11 +441,19 @@ int main() {
             }
         }
 
-        // TODO: Load all the lighting from the fbx model
-        // (Use a dummy set of values for now)
-        LightingData light;
-        light.lightColour = glm::vec3(1, 1, 1);
-        light.lightPosition = glm::vec3(-0.2972, 7.3100, -11.9532);
+        // Load all the lighting from the fbx model
+        std::vector<LightingData> lights;
+        for (fbx::Light light : fbxScene.lights) {
+            if (!light.isPointLight) {
+                LightingData lightData;
+                lightData.lightColour = light.colour;
+                lightData.lightPosition = light.location;
+                lights.emplace_back(lightData);
+            }
+        }
+
+        playerCamera.position = lights[0].lightPosition;
+        playerCamera.worldCameraMatrix = playerCamera.worldCameraMatrix * glm::translate(playerCamera.position);
 
         std::cout << "Num meshes: " << fbxScene.meshes.size() << std::endl;
         std::cout << "Num materials: " << fbxScene.materials.size() << std::endl;
@@ -453,6 +461,7 @@ int main() {
         std::cout << "Num normal textures: " << fbxScene.normalTextures.size() << std::endl;
         std::cout << "Num specular textures: " << fbxScene.specularTextures.size() << std::endl;
         std::cout << "Num emissive textures: " << fbxScene.emissiveTextures.size() << std::endl;
+        std::cout << "Num lights: " << lights.size() << std::endl;
 
 
         // Create a texture sampler
@@ -480,7 +489,7 @@ int main() {
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
         // Set the data for the lighting buffer
-        updateLightingUniforms(application, lightingUniformBuffer.buffer, light, commandPool);
+        updateLightingUniforms(application, lightingUniformBuffer.buffer, lights[0], commandPool);
 
         // Create and initialise the lighting descriptor sets
         VkDescriptorSet lightDescriptorSet = createBufferDescriptorSet(application, descriptorPool,
@@ -1412,7 +1421,7 @@ namespace {
         worldUniform.projectionCameraMatrix = projectionMatrix * cameraMatrix;
     
         // Update the camera position
-        worldUniform.cameraPosition = cameraInfo.position;
+        worldUniform.cameraPosition = glm::vec3(cameraInfo.worldCameraMatrix[3]);
     }
 
     void updateLightingUniforms(app::AppContext& app, VkBuffer lightingBuffer, LightingData lightData,

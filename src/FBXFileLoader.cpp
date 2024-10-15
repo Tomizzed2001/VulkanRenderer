@@ -155,8 +155,13 @@ namespace fbx {
         // Check if the node has a mesh component
         FbxMesh* nodeMesh = node->GetMesh();
         if (nodeMesh == NULL) {
-            if (DEBUG_OUTPUTS)
+            if (DEBUG_OUTPUTS) {
                 std::cout << "Node has no mesh component." << std::endl;
+            }
+            FbxLight* light = node->GetLight();
+            if (light != NULL) {
+                outputScene.lights.emplace_back(createLightData(light, transformMatrix));
+            }
         }
         else {
             // Create the mesh data
@@ -457,6 +462,38 @@ namespace fbx {
         }
 
         return textureIndex;
+    }
+
+    Light createLightData(FbxLight* inLight, glm::mat4 transform) {
+        Light outLight;
+
+        // The location of the light is simply defined by the transform matrix
+        outLight.location = transform[3];
+
+        // Get the light colour
+        FbxDouble3 colour = inLight->Color.Get();
+        outLight.colour = glm::vec3(colour[0], colour[1], colour[2]);
+
+        // Get the direction of the light if its a directional light
+        if (inLight->LightType.Get() == FbxLight::eSpot ||
+            inLight->LightType.Get() == FbxLight::eDirectional) {
+            // It is not a point light
+            outLight.isPointLight = false;
+
+            // Get rotation only from the transform
+            transform[3] = glm::vec4(0, 0, 0, 1);
+            outLight.direction = transform;
+        }
+        else {
+            // It is a point light
+            outLight.isPointLight = true;
+
+            // No direction so just set as the identity
+            outLight.direction = glm::mat4(1);
+        }
+
+
+        return outLight;
     }
 
     std::vector<glm::vec4> calculateTangents(

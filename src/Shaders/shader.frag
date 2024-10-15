@@ -70,7 +70,7 @@ void main()
 	vec3 halfVector = normalize(0.5 * (viewDirection + lightDirection));
 
 	// Ambient
-	vec3 ambient = vec3(0.2,0.2,0.2) * diffuse;
+	vec3 ambient = vec3(0.02,0.02,0.02) * diffuse;
 
 	// Geometric term 
 	float nDh = max(0, dot(normal, halfVector));
@@ -98,5 +98,5 @@ void main()
 	vec3 pixelColour = ambient + (brdf * light.lightColour * nDl);
 
 	// Output the colour
-	outColour = vec4(pixelColour, 1.f);
+	outColour = vec4(pixelColour.rgb, 1.f);
 }

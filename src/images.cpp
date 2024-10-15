@@ -54,7 +54,7 @@ namespace utility {
 	}
 
 	ImageSet createDDSTextureImageSet(app::AppContext& app, char const* filePath, VmaAllocator& allocator,
-		VkCommandPool commandPool) {
+		VkCommandPool commandPool, bool isSRGB) {
 		
         // Load in the dds file using the tinyddsloader header library
 		tinyddsloader::DDSFile file;
@@ -65,44 +65,54 @@ namespace utility {
         // Flip the texture
 		file.Flip();
 
+		VkFormat format = VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+		tinyddsloader::DDSFile::DXGIFormat ddsFormat = file.GetFormat();
         // Set a default format and check to see if it different
-        VkFormat format = VK_FORMAT_BC1_RGB_UNORM_BLOCK;
-
-        switch (file.GetFormat()) {
-            case tinyddsloader::DDSFile::DXGIFormat::BC1_UNorm:
-                format = VK_FORMAT_BC1_RGB_UNORM_BLOCK;
-                break;
-            case tinyddsloader::DDSFile::DXGIFormat::BC1_UNorm_SRGB:
-                format = VK_FORMAT_BC1_RGB_SRGB_BLOCK;
-                break;
-            case tinyddsloader::DDSFile::DXGIFormat::BC2_UNorm:
-                format = VK_FORMAT_BC2_UNORM_BLOCK;
-                break;
-            case tinyddsloader::DDSFile::DXGIFormat::BC2_UNorm_SRGB:
-                format = VK_FORMAT_BC2_SRGB_BLOCK;
-                break;
-            case tinyddsloader::DDSFile::DXGIFormat::BC3_UNorm:
-                format = VK_FORMAT_BC3_UNORM_BLOCK;
-                break;
-            case tinyddsloader::DDSFile::DXGIFormat::BC3_UNorm_SRGB:
-                format = VK_FORMAT_BC3_SRGB_BLOCK;
-                break;
-            case tinyddsloader::DDSFile::DXGIFormat::BC4_UNorm:
-                format = VK_FORMAT_BC4_UNORM_BLOCK;
-                break;
-            case tinyddsloader::DDSFile::DXGIFormat::BC4_SNorm:
-                format = VK_FORMAT_BC4_SNORM_BLOCK;
-                break;
-            case tinyddsloader::DDSFile::DXGIFormat::BC5_UNorm:
-                format = VK_FORMAT_BC5_UNORM_BLOCK;
-                break;
-            case tinyddsloader::DDSFile::DXGIFormat::BC5_SNorm:
-                format = VK_FORMAT_BC5_SNORM_BLOCK;
-                break;
-            default:
-                std::cout << "Not a compressed texture";
-        }
-		
+		switch (file.GetFormat()) {
+		case tinyddsloader::DDSFile::DXGIFormat::BC1_UNorm:
+			if (isSRGB) {
+				format = VK_FORMAT_BC1_RGB_SRGB_BLOCK;
+			}
+			else {
+				format = VK_FORMAT_BC1_RGB_UNORM_BLOCK;
+			}
+			break;
+		case tinyddsloader::DDSFile::DXGIFormat::BC1_UNorm_SRGB:
+			format = VK_FORMAT_BC1_RGB_SRGB_BLOCK;
+			break;
+		case tinyddsloader::DDSFile::DXGIFormat::BC2_UNorm:
+			format = VK_FORMAT_BC2_UNORM_BLOCK;
+			break;
+		case tinyddsloader::DDSFile::DXGIFormat::BC2_UNorm_SRGB:
+			format = VK_FORMAT_BC2_SRGB_BLOCK;
+			break;
+		case tinyddsloader::DDSFile::DXGIFormat::BC3_UNorm:
+			if (isSRGB) {
+				format = VK_FORMAT_BC3_SRGB_BLOCK;
+			}
+			else {
+				format = VK_FORMAT_BC3_UNORM_BLOCK;
+			}
+			break;
+		case tinyddsloader::DDSFile::DXGIFormat::BC3_UNorm_SRGB:
+			format = VK_FORMAT_BC3_SRGB_BLOCK;
+			break;
+		case tinyddsloader::DDSFile::DXGIFormat::BC4_UNorm:
+			format = VK_FORMAT_BC4_UNORM_BLOCK;
+			break;
+		case tinyddsloader::DDSFile::DXGIFormat::BC4_SNorm:
+			format = VK_FORMAT_BC4_SNORM_BLOCK;
+			break;
+		case tinyddsloader::DDSFile::DXGIFormat::BC5_UNorm:
+			format = VK_FORMAT_BC5_UNORM_BLOCK;
+			break;
+		case tinyddsloader::DDSFile::DXGIFormat::BC5_SNorm:
+			format = VK_FORMAT_BC5_SNORM_BLOCK;
+			break;
+		default:
+			std::cout << "Not a compressed texture";
+		}
+        
 		VkExtent3D extent(file.GetWidth(), file.GetHeight(), file.GetDepth());
         
 		// Get the image data size (including all mip maps)
@@ -257,7 +267,7 @@ namespace utility {
 			throw std::runtime_error("Failed to create textured image view.");
 		}
 
-		if (format != VK_FORMAT_BC1_RGB_UNORM_BLOCK) {
+		if (format != VK_FORMAT_BC1_RGB_UNORM_BLOCK && format != VK_FORMAT_BC1_RGB_SRGB_BLOCK) {
 			imageSet.isAlpha = true;
 		}
 

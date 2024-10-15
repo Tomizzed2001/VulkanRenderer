@@ -56,6 +56,18 @@ namespace fbx {
 	};
 
 	/// <summary>
+	/// Data for a light within the scene
+	/// </summary>
+	struct Light
+	{
+		bool isPointLight;
+
+		glm::vec3 location;
+		glm::vec3 colour;
+		glm::mat4 direction;
+	};
+
+	/// <summary>
 	/// Data contained in a scene
 	/// </summary>
 	struct Scene
@@ -66,6 +78,7 @@ namespace fbx {
 		std::vector<Texture> specularTextures;
 		std::vector<Texture> normalTextures;
 		std::vector<Texture> emissiveTextures;
+		std::vector<Light> lights;
 	};
 
 	/// <summary>
@@ -106,6 +119,14 @@ namespace fbx {
 	/// <param name="textureSet">The output texture set to use</param>
 	/// <returns>The ID of the texture in the output scene</returns>
 	std::uint32_t createTexture(FbxFileTexture* texture, std::vector<Texture>& textureSet);
+
+	/// <summary>
+	/// Creates and populates a light data structure given an fbx light
+	/// </summary>
+	/// <param name="inLight">Fbx light</param>
+	/// <param name="transform">The node transform matrix</param>
+	/// <returns></returns>
+	Light createLightData(FbxLight* inLight, glm::mat4 transform);
 
 	/// <summary>
 	/// Calculates the vertex tangents for a given mesh

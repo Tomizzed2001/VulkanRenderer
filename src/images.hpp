@@ -39,9 +39,10 @@ namespace utility {
 	/// <param name="filePath">Path to the .dds file</param>
 	/// <param name="allocator">Memory allocator</param>
 	/// <param name="commandPool">Command pool</param>
+	/// <param name="isSRGB">Should the format be SRGB</param>
 	/// <returns>An image set containing the VkImage and VkImageView</returns>
 	ImageSet createDDSTextureImageSet(app::AppContext& app, char const* filePath, 
-		VmaAllocator& allocator, VkCommandPool commandPool);
+		VmaAllocator& allocator, VkCommandPool commandPool, bool isSRGB = false);
 
 	/// <summary>
 	/// Creates an image texture set given a png file

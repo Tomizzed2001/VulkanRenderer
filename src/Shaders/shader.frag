@@ -33,6 +33,14 @@ layout(set = 2, binding = 0, std140) uniform LightBuffer {
 // The screen colour output
 layout (location = 0) out vec4 outColour;
 
+float GeometricShadowing(vec3 x, float alpha, vec3 h, vec3 n, float charFunction){
+	float xDh = max(0, dot(x, h));
+	float xDn = max(0, dot(x, n));
+	float tan2 = (1 - xDn * xDn) / (xDn * xDn);
+
+	return charFunction * (xDn / xDh) * (2 / (1 + sqrt(1 + alpha * tan2)));
+}
+
 void main()
 {
 	// Roughness
@@ -44,12 +52,12 @@ void main()
 	// Diffuse
 	vec3 diffuse = texture(textureColour[inMatID], inTexCoord).rgb;
 
-	// Normal map
-	vec3 normal = texture(textureNormalMap[inMatID], inTexCoord).rgb;
-	// Map to the 0-1 range
-	normal = normal * 2.0 - 1.0;
-	// Flip the green channel as texture is in directX format
-	normal.g = normal.g * -1;
+	// Normal map (Textures are BC5 (2-Channel))
+	vec2 normal2D = texture(textureNormalMap[inMatID], inTexCoord).rg;
+	// Map from the 0-1 range
+	normal2D = normal2D * 2.0 - 1.0;
+	// Construct the Z component and finish the normal
+	vec3 normal = vec3(normal2D.x, normal2D.y, sqrt(1 - normal2D.x * normal2D.x - normal2D.y * normal2D.y));
 
 	// Create the TBN matrix
 	vec3 T = normalize(inTangent.xyz);
@@ -70,18 +78,20 @@ void main()
 	vec3 halfVector = normalize(0.5 * (viewDirection + lightDirection));
 
 	// Ambient
-	vec3 ambient = vec3(0.02,0.02,0.02) * diffuse;
+	vec3 ambient = vec3(0.2,0.2,0.2) * diffuse;
+
+	// Positive characteristic function
+	float X = (1 + sign(roughness)) / 2;
 
 	// Geometric term 
 	float nDh = max(0, dot(normal, halfVector));
 	float nDv = max(0, dot(normal, viewDirection));
 	float nDl = max(0, dot(normal, lightDirection));
-	float G = min(1, min(2 * ((nDh * nDv) / (dot(viewDirection, halfVector) + EPSILON)) , 2 * ((nDh * nDl) / (dot(viewDirection, halfVector) + EPSILON))));
-	
+	//float G = min(1, min(2 * ((nDh * nDv) / (dot(viewDirection, halfVector) + EPSILON)) , 2 * ((nDh * nDl) / (dot(viewDirection, halfVector) + EPSILON))));
+	float G = GeometricShadowing(viewDirection, roughness, halfVector, normal, X) * GeometricShadowing(lightDirection, roughness, halfVector, normal, X);
+
 	// Normal distribution function
-	float top = pow(E, (nDh * nDh - 1) / ((roughness * roughness) * (nDh * nDh)));
-	float bot = PI * (roughness * roughness) * pow(nDh, 4);
-	float D = top / (bot + EPSILON);
+	float D = X * nDh * ( roughness / ( PI * ( (nDh * nDh) * (roughness - 1) + 1 ) * ( (nDh * nDh) * (roughness - 1) + 1 )));
 
 	// Fresnel (Schlick approximation)
 	vec3 F0 = (1-metalness) * vec3(0.04, 0.04, 0.04) + (metalness * diffuse);
@@ -98,5 +108,5 @@ void main()
 	vec3 pixelColour = ambient + (brdf * light.lightColour * nDl);
 
 	// Output the colour
-	outColour = vec4(pixelColour.rgb, 1.f);
+	outColour = vec4(pixelColour, 1.f);
 }

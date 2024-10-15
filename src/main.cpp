@@ -369,8 +369,8 @@ int main() {
         VkCommandPool commandPool = utility::createCommandPool(application, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 
         // Load an FBX model
-        //fbx::Scene fbxScene = fbx::loadFBXFile("Bistro/BistroExterior.fbx");
-        fbx::Scene fbxScene = fbx::loadFBXFile("SunTemple/SunTemple.fbx");
+        fbx::Scene fbxScene = fbx::loadFBXFile("Bistro/BistroExterior.fbx");
+        //fbx::Scene fbxScene = fbx::loadFBXFile("SunTemple/SunTemple.fbx");
 
         // Load all textures from the fbx model
         // Load colour (diffuse) textures in
@@ -1539,9 +1539,9 @@ namespace {
         // Define a colour for background of the renderpass
         VkClearValue backgroundColour[2]{};
         // Swapchain colour background
-        backgroundColour[0].color.float32[0] = 0.6f;
-        backgroundColour[0].color.float32[1] = 0.1f;
-        backgroundColour[0].color.float32[2] = 0.1f;
+        backgroundColour[0].color.float32[0] = 0.45f;
+        backgroundColour[0].color.float32[1] = 0.75f;
+        backgroundColour[0].color.float32[2] = 0.8f;
         backgroundColour[0].color.float32[3] = 1.0f;
         // Depth buffer clear background
         backgroundColour[1].depthStencil.depth = 1.0f;

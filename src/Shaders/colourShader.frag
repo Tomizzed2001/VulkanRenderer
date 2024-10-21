@@ -11,6 +11,7 @@ layout (location = 1) in vec3 inPosition;
 layout (location = 2) in vec3 inNormal;
 layout (location = 3) in vec4 inTangent;
 layout (location = 4) flat in int inMatID;
+layout (location = 5) in vec4 inLightDir;
 
 // The world view uniform
 layout(set = 0, binding = 0) uniform worldView
@@ -26,9 +27,12 @@ layout (set = 1, binding = 2) uniform sampler2D textureNormalMap[];
 
 // The lighting uniform
 layout(set = 2, binding = 0, std140) uniform LightBuffer { 
+    mat4 lightDirection;
     vec3 lightPosition;
 	vec3 lightColour;
 } light;
+
+layout (set = 3, binding = 0) uniform sampler2DShadow textureShadow;
 
 // The screen colour output
 layout (location = 0) out vec4 outColour;
@@ -78,7 +82,7 @@ void main()
 	vec3 halfVector = normalize(0.5 * (viewDirection + lightDirection));
 
 	// Ambient
-	vec3 ambient = vec3(0.2,0.2,0.2) * diffuse;
+	vec3 ambient = vec3(0.02,0.02,0.02) * diffuse;
 
 	// Positive characteristic function
 	float X = (1 + sign(roughness)) / 2;
@@ -103,9 +107,30 @@ void main()
 	// Specular term
 	vec3 brdf = lDiffuse + ( ( D * F * G ) / ( 4 * nDv * nDl + EPSILON) ) ;
 
+	// Create dynamic bias to prevent shadow acne
+	float bias = max(0.01 * (1.0 - dot(inNormal, lightDirection)), 0.005);
+	// How far from camera?
+	float hitDepth = (inLightDir.xyz / inLightDir.w).z;	
+	// 3x3 PCF
+	float shadow = 0.0;
+	vec2 offset = 1.0 / textureSize(textureShadow, 0);
+	for(int x = -1; x <= 1; ++x)
+	{
+		for(int y = -1; y <= 1; ++y)
+		{
+			vec4 pos = inLightDir + vec4(x * offset.x, y * offset.y, 0, 0);
+			float firstDepth = textureProj(textureShadow, pos, 0.0);
+			shadow += 1.f;
+			if (hitDepth - bias > firstDepth){
+				shadow -= 1.0;
+			}    
+		}    
+	}
+	shadow /= 9.0;
+
 	// Rendering equation 
 	// Out = Emissive + Ambient + BRDF * Light Colour * clampedDot(normal, light direction)
-	vec3 pixelColour = ambient + (brdf * light.lightColour * nDl);
+	vec3 pixelColour = ambient + (brdf * light.lightColour * nDl * shadow);
 
 	// Output the colour
 	outColour = vec4(pixelColour, 1.f);

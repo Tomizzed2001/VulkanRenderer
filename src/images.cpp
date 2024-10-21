@@ -7,7 +7,8 @@
 #include "tinyddsloader.h"
 
 namespace utility {
-	ImageSet createImageSet(app::AppContext& app, VmaAllocator& allocator, VkFormat format, VkImageUsageFlags usageFlags, VkImageAspectFlagBits aspectFlagBits) {
+	ImageSet createImageSet(app::AppContext& app, VmaAllocator& allocator, VkFormat format, 
+		VkImageUsageFlags usageFlags, VkImageAspectFlagBits aspectFlagBits, VkExtent2D extent) {
 		// Create the image and image view
 		ImageSet imageSet;
 
@@ -16,8 +17,8 @@ namespace utility {
 		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		imageInfo.imageType = VK_IMAGE_TYPE_2D;
 		imageInfo.format = format;
-		imageInfo.extent.width = app.swapchainExtent.width;
-		imageInfo.extent.height = app.swapchainExtent.height;
+		imageInfo.extent.width = extent.width;
+		imageInfo.extent.height = extent.height;
 		imageInfo.extent.depth = 1;
 		imageInfo.mipLevels = 1;
 		imageInfo.arrayLayers = 1;

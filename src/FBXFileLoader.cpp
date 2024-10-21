@@ -481,7 +481,7 @@ namespace fbx {
             outLight.isPointLight = false;
 
             // Get rotation only from the transform
-            transform[3] = glm::vec4(0, 0, 0, 1);
+            //transform[3] = glm::vec4(0, 0, 0, 1);
             outLight.direction = transform;
         }
         else {

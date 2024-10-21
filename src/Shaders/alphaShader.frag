@@ -26,6 +26,7 @@ layout (set = 1, binding = 2) uniform sampler2D textureNormalMap[];
 
 // The lighting uniform
 layout(set = 2, binding = 0, std140) uniform LightBuffer { 
+    mat4 lightDirection;
     vec3 lightPosition;
 	vec3 lightColour;
 } light;

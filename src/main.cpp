@@ -26,6 +26,8 @@
 #include "model.hpp"
 #include "FBXFileLoader.hpp"
 
+#define DEPTH_RES 4096
+
 namespace {
 
     struct CameraInfo {
@@ -44,7 +46,7 @@ namespace {
     };
 
     struct LightingData {
-        //glm::mat4 lightDirectionMatrix;
+        glm::mat4 lightDirectionMatrix;
         alignas(16) glm::vec3 lightPosition;
         alignas(16) glm::vec3 lightColour;
     };
@@ -55,6 +57,8 @@ namespace {
         char const* alphaFragmentShaderPath = "Shaders/alphaFrag.spv";
         char const* fullscreenVertexShaderPath = "Shaders/fullscreenVert.spv";
         char const* fullscreenFragmentShaderPath = "Shaders/fullscreenFrag.spv";
+        char const* shadowVertexShaderPath = "Shaders/shadowVert.spv";
+        char const* shadowFragmentShaderPath = "Shaders/shadowFrag.spv";
         char const* textureFillPath = "EmptyTexture.png";
     }
 
@@ -101,6 +105,13 @@ namespace {
     VkRenderPass createColourRenderPass(app::AppContext& app);
 
     /// <summary>
+    /// Creates a colour render pass to generate the colours of the rendering
+    /// </summary>
+    /// <param name="app">The context of the application</param>
+    /// <returns>Render pass</returns>
+    VkRenderPass createShadowRenderPass(app::AppContext& app);
+
+    /// <summary>
     /// Creates a render pass for outputting the result to screen
     /// </summary>
     /// <param name="app">The context of the application</param>
@@ -134,6 +145,13 @@ namespace {
     /// <param name="app">The context of the application</param>
     /// <returns>Descriptor set layout</returns>
     VkDescriptorSetLayout createFullscreenDescriptorSetLayout(app::AppContext& app);
+
+    /// <summary>
+    /// Creates a descriptor set layout to feed into the pipeline
+    /// </summary>
+    /// <param name="app">The context of the application</param>
+    /// <returns>Descriptor set layout</returns>
+    VkDescriptorSetLayout createShadowDescriptorSetLayout(app::AppContext& app);
 
     /// <summary>
     /// Creates a pipeline layout prior to making a pipeline
@@ -178,13 +196,28 @@ namespace {
         VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader);
 
     /// <summary>
+    /// Creates a graphics pipeline to set how the rendering should be done
+    /// </summary>
+    /// <param name="app"> The application context </param>
+    /// <param name="pipeLayout">A pipeline layout</param>
+    /// <param name="renderPass">The render pass to apply the pipeline to</param>
+    /// <param name="vertexShader">The vertex shader to use</param>
+    /// <param name="fragmentShader">The fragment shader to use</param>
+    /// <returns></returns>
+    VkPipeline createShadowPipeline(app::AppContext& app, VkPipelineLayout pipeLayout,
+        VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader);
+
+    /// <summary>
     /// Creates a frame buffer to store the output of a render pass
     /// </summary>
     /// <param name="app">The application context</param>
     /// <param name="renderPass">The render pass that the framebuffer will be used with</param>
     /// <param name="buffers">The image view attatchements of the framebuffer</param>
+    /// <param name="width">The image width</param>
+    /// <param name="height">The image height</param>
     /// <returns></returns>
-    VkFramebuffer createFramebuffer(app::AppContext& app, VkRenderPass renderPass, std::vector<VkImageView>& buffers);
+    VkFramebuffer createFramebuffer(app::AppContext& app, VkRenderPass renderPass, std::vector<VkImageView>& buffers,
+        uint32_t width, uint32_t height);
 
     /// <summary>
     /// Creates a texture sampler
@@ -192,6 +225,13 @@ namespace {
     /// <param name="app">Application context</param>
     /// <returns>Vulkan sampler</returns>
     VkSampler createTextureSampler(app::AppContext& app);
+
+    /// <summary>
+    /// Creates a texture sampler
+    /// </summary>
+    /// <param name="app">Application context</param>
+    /// <returns>Vulkan sampler</returns>
+    VkSampler createShadowSampler(app::AppContext& app);
 
     /// <summary>
     /// Creates a descriptor pool
@@ -287,12 +327,16 @@ namespace {
     /// <param name="frameBuffer">The framebuffer to use</param>
     /// <param name="fullRenderPass">The fullscreen render pass</param>
     /// <param name="swapFrameBuffer">The swapchain framebuffer to use</param>
+    /// <param name="shadowRenderPass">The shadow render pass</param>
+    /// <param name="shadowFrameBuffer">The shadow framebuffer to use</param>
     /// <param name="renderArea">The render area of the frame buffer</param>
+    /// <param name="shadowArea">The render area of the shadow frame buffer</param>
     /// <param name="pipeline">Render pipeline</param>
     /// <param name="alphaPipeline">Alpha mask Render pipeline</param>
     /// <param name="fullscreenPipeline">Fullscreen Render pipeline</param>
     /// <param name="pipelineLayout">Render pipeline layout</param>
     /// <param name="fullscreenPipelineLayout">Fullscreen Render pipeline layout</param>
+    /// <param name="shadowPipelineLayout">Shadow Render pipeline layout</param>
     /// <param name="worldDescriptorSet">Descriptor set describing the world view uniform</param>
     /// <param name="textureDescriptorSet">Descriptor set describing the textures</param>
     /// <param name="lightingDescriptorSet">Descriptor set describing the lighting uniform</param>
@@ -306,15 +350,19 @@ namespace {
         VkBuffer worldUniformBuffer, WorldView worldUniform,        // World Uniform
         VkRenderPass renderPass, VkFramebuffer frameBuffer,         // Colour Render pass
         VkRenderPass fullRenderPass, VkFramebuffer swapFrameBuffer, // Full screen render pass
-        VkRect2D renderArea,
+        VkRenderPass shadowRenderPass, VkFramebuffer shadowFrameBuffer, // Shadow render pass
+        VkRect2D renderArea, VkRect2D shadowArea,
         VkPipeline pipeline, VkPipeline alphaPipeline,              // Pipelines
         VkPipeline fullscreenPipeline,                              // Pipelines
+        VkPipeline shadowPipeline,                                  // Pipelines
         VkPipelineLayout pipelineLayout,                            // Pipelines
         VkPipelineLayout fullscreenPipelineLayout,                  // Pipelines
+        VkPipelineLayout shadowPipelineLayout,                      // Pipelines
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
         VkDescriptorSet textureDescriptorSet,                       // Texture descriptors
         VkDescriptorSet lightingDescriptorSet,                      // Lighting descriptors
         VkDescriptorSet fullscreenDescriptorSet,                    // Fullscreen descriptor
+        VkDescriptorSet shadowDescriptorSet,                        // Shadow descriptor
         std::vector<model::Mesh>& meshes,                           // Mesh data
         std::vector<model::Mesh>& alphaMeshes,                      // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
@@ -373,6 +421,9 @@ int main() {
         // Create the memory allocator
         VmaAllocator allocator = createMemoryAllocator(application);
 
+        // Create the shadows render pass
+        VkRenderPass renderPassShadows = createShadowRenderPass(application);
+
         // Create the renderpass that determines the colour
         VkRenderPass renderPassColour = createColourRenderPass(application);
 
@@ -388,14 +439,22 @@ int main() {
         VkDescriptorSetLayout lightDescriptorSetLayout = createLightDescriptorSetLayout(application);
         // Fullscreen descriptor set layout contains the data for the fullscreen render pass
         VkDescriptorSetLayout fullscreenDescriptorSetLayout = createFullscreenDescriptorSetLayout(application);
+        // Fullscreen descriptor set layout contains the data for the fullscreen render pass
+        VkDescriptorSetLayout shadowDescriptorSetLayout = createShadowDescriptorSetLayout(application);
 
         // Create a vector of the descriptor sets to use
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+
+        // Create shadow pipeline layout
+        descriptorSetLayouts.emplace_back(lightDescriptorSetLayout);
+        VkPipelineLayout shadowPipelineLayout = createPipelineLayout(application, descriptorSetLayouts);;
+
+        // Create colour pipeline layout
+        descriptorSetLayouts.clear();
         descriptorSetLayouts.emplace_back(worldDescriptorSetLayout);
         descriptorSetLayouts.emplace_back(textureDescriptorSetLayout);
         descriptorSetLayouts.emplace_back(lightDescriptorSetLayout);
-
-        // Create colour pipeline layout
+        descriptorSetLayouts.emplace_back(shadowDescriptorSetLayout);
         VkPipelineLayout pipelineLayout = createPipelineLayout(application, descriptorSetLayouts);
 
         // Create full screen
@@ -409,31 +468,52 @@ int main() {
         VkShaderModule alphaFragmentShader = createShaderModule(application, paths::alphaFragmentShaderPath);
         VkShaderModule fullscreenVertexShader = createShaderModule(application, paths::fullscreenVertexShaderPath);
         VkShaderModule fullscreenFragmentShader = createShaderModule(application, paths::fullscreenFragmentShaderPath);
+        VkShaderModule shadowVertexShader = createShaderModule(application, paths::shadowVertexShaderPath);
+        VkShaderModule shadowFragmentShader = createShaderModule(application, paths::shadowFragmentShaderPath);
 
         // Create the pipeline
         VkPipeline pipeline = createPipeline(application, pipelineLayout, renderPassColour, colourVertexShader, colourFragmentShader);
         VkPipeline alphaPipeline = createPipeline(application, pipelineLayout, renderPassColour, colourVertexShader, alphaFragmentShader, true);
         VkPipeline fullscreenPipeline = createFullscreenPipeline(application, fullscreenPipelineLayout, renderPassFullscreen, fullscreenVertexShader, fullscreenFragmentShader);
+        VkPipeline shadowPipeline = createShadowPipeline(application, shadowPipelineLayout, renderPassShadows, shadowVertexShader, shadowFragmentShader);
 
         // Create a vkImage and vkImageView to store the depth buffer
         utility::ImageSet depthBuffer = utility::createImageSet(application, allocator,
             VK_FORMAT_D32_SFLOAT, 
             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 
-            VK_IMAGE_ASPECT_DEPTH_BIT
+            VK_IMAGE_ASPECT_DEPTH_BIT, 
+            application.swapchainExtent 
         );
 
-        // Create a vkImage and vkImageView to storee the fullscreen image
+        // Create a vkImage and vkImageView to store the fullscreen image
         utility::ImageSet fullscreenBuffer = utility::createImageSet(application, allocator,
-            application.swapchainFormat, 
+            application.swapchainFormat,
             VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-            VK_IMAGE_ASPECT_COLOR_BIT
+            VK_IMAGE_ASPECT_COLOR_BIT, 
+            application.swapchainExtent
+        );
+
+        // Create a vkImage and vkImageView to store the shadow image
+        VkExtent2D shadowExtent(DEPTH_RES, DEPTH_RES);
+        utility::ImageSet shadowBuffer = utility::createImageSet(application, allocator,
+            VK_FORMAT_D32_SFLOAT, 
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            VK_IMAGE_ASPECT_DEPTH_BIT,
+            shadowExtent
         );
         
         // Create a framebuffer to hold the results of the colour render pass
         std::vector<VkImageView> colourAttatchments;
         colourAttatchments.emplace_back(fullscreenBuffer.imageView);
         colourAttatchments.emplace_back(depthBuffer.imageView);
-        VkFramebuffer colourFramebuffer = createFramebuffer(application, renderPassColour, colourAttatchments);
+        VkFramebuffer colourFramebuffer = createFramebuffer(application, renderPassColour, colourAttatchments, 
+            application.swapchainExtent.width, application.swapchainExtent.height);
+
+        // Create a framebuffer to hold the results of the shadow render pass
+        std::vector<VkImageView> shadowAttatchments;
+        shadowAttatchments.emplace_back(shadowBuffer.imageView);
+        VkFramebuffer shadowFramebuffer = createFramebuffer(application, renderPassShadows, shadowAttatchments,
+            shadowExtent.width, shadowExtent.height);
 
         // Create the swapchain framebuffers (one for each of the image views)
         std::vector<VkFramebuffer> swapchainFramebuffers;
@@ -443,7 +523,8 @@ int main() {
             swapchainAttatchments.emplace_back(application.swapchainImageViews[i]);
             
             // Create the framebuffer
-            swapchainFramebuffers.emplace_back(createFramebuffer(application, renderPassFullscreen, swapchainAttatchments));
+            swapchainFramebuffers.emplace_back(createFramebuffer(application, renderPassFullscreen, swapchainAttatchments,
+                application.swapchainExtent.width, application.swapchainExtent.height));
         }
 
         // Create the command pool
@@ -527,9 +608,20 @@ int main() {
         for (fbx::Light light : fbxScene.lights) {
             if (!light.isPointLight) {
                 LightingData lightData;
+                
+                float const aspect = application.swapchainExtent.width / float(application.swapchainExtent.height);
+                glm::mat4 lightProjection = glm::perspectiveRH_NO(glm::radians(100.f), aspect, 1.f, 30.f);
+                lightProjection[1][1] *= -1.f;
+                glm::mat4 lightView = glm::translate(glm::mat4(1), light.location) * glm::rotate(glm::radians(210.f), glm::vec3(0, 1, 0));
+                glm::mat4 lightSpaceMatrix = lightProjection * glm::inverse(lightView);
+                
+                std::cout << glm::to_string(light.direction) << std::endl;
+
+                lightData.lightDirectionMatrix = lightSpaceMatrix;
                 lightData.lightColour = light.colour;
                 lightData.lightPosition = light.location;
                 lights.emplace_back(lightData);
+                break;
             }
         }
 
@@ -547,6 +639,7 @@ int main() {
 
         // Create a texture sampler
         VkSampler sampler = createTextureSampler(application);
+        VkSampler shadowSampler = createShadowSampler(application);
 
         // Create descriptor pool
         VkDescriptorPool descriptorPool = createDescriptorPool(application);
@@ -554,6 +647,10 @@ int main() {
         // Create and initialise the framebuffer
         VkDescriptorSet frameBufferDescriptorSet = createFramebufferDescriptorSet(application, descriptorPool,
             fullscreenDescriptorSetLayout, fullscreenBuffer, sampler);
+
+        // Create and initialise the shadow framebuffer
+        VkDescriptorSet shadowDescriptorSet = createFramebufferDescriptorSet(application, descriptorPool,
+            shadowDescriptorSetLayout, shadowBuffer, shadowSampler);
 
         // Create the world uniform buffer
         utility::BufferSet worldUniformBuffer = utility::createBuffer(allocator, sizeof(WorldView),
@@ -596,6 +693,19 @@ int main() {
         VkSemaphore imageIsReady = utility::createSemaphore(application, 0);
         VkSemaphore renderHasFinished = utility::createSemaphore(application, 0);
 
+        // Get the render area
+        VkRect2D renderArea;
+        renderArea.extent = application.swapchainExtent;
+        renderArea.offset = VkOffset2D{ 0,0 };
+
+        VkRect2D shadowRenderArea;
+        shadowRenderArea.extent = VkExtent2D{DEPTH_RES, DEPTH_RES};
+        shadowRenderArea.offset = VkOffset2D{ 0,0 };
+
+        // Get the set of offsets
+        std::vector<VkDeviceSize> meshOffsets = { 0, 0 };
+
+
         bool resizeWindow = false;
 
         // Main render loop
@@ -635,7 +745,7 @@ int main() {
                     vkDestroyImageView(application.logicalDevice, depthBuffer.imageView, nullptr);
                     // Remake
                     depthBuffer = utility::createImageSet(application, allocator, VK_FORMAT_D32_SFLOAT,
-                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
+                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, application.swapchainExtent);
                 }
                 
                 // Remake the framebuffers
@@ -646,7 +756,8 @@ int main() {
                     swapchainAttatchments.emplace_back(depthBuffer.imageView);
 
                     // Create the framebuffer
-                    swapchainFramebuffers.emplace_back(createFramebuffer(application, renderPassColour, swapchainAttatchments));
+                    swapchainFramebuffers.emplace_back(createFramebuffer(application, renderPassColour, swapchainAttatchments,
+                        application.swapchainExtent.width, application.swapchainExtent.height));
                 }
 
                 // If size has changed, the pipelines need remaking
@@ -699,15 +810,6 @@ int main() {
             float screenAspect = float(application.swapchainExtent.width) / float(application.swapchainExtent.height);
             updateWorldUniforms(worldViewUniform, screenAspect, playerCamera);
 
-            // Get the render area
-            VkRect2D renderArea;
-            renderArea.extent = application.swapchainExtent;
-            renderArea.offset = VkOffset2D{ 0,0 };
-
-            // Get the set of offsets
-            std::vector<VkDeviceSize> meshOffsets = {0, 0};
-
-
             // Record commands
             recordCommands(
                 commandBuffers[nextImageIndex],
@@ -717,16 +819,22 @@ int main() {
                 colourFramebuffer,
                 renderPassFullscreen,
                 swapchainFramebuffers[nextImageIndex],
+                renderPassShadows,
+                shadowFramebuffer,
                 renderArea,
+                shadowRenderArea,
                 pipeline,
                 alphaPipeline,
                 fullscreenPipeline,
+                shadowPipeline,
                 pipelineLayout,
                 fullscreenPipelineLayout,
+                shadowPipelineLayout,
                 worldDescriptorSet,
                 bindlessTextureDescriptorSet,
                 lightDescriptorSet,
                 frameBufferDescriptorSet,
+                shadowDescriptorSet,
                 meshes,
                 alphaMeshes,
                 meshOffsets,
@@ -782,6 +890,9 @@ int main() {
 
         // Destroy image related components
         vkDestroySampler(application.logicalDevice, sampler, nullptr);
+        vkDestroySampler(application.logicalDevice, shadowSampler, nullptr);
+        vmaDestroyImage(allocator, shadowBuffer.image, shadowBuffer.allocation);
+        vkDestroyImageView(application.logicalDevice, shadowBuffer.imageView, nullptr);
         vmaDestroyImage(allocator, fullscreenBuffer.image, fullscreenBuffer.allocation);
         vkDestroyImageView(application.logicalDevice, fullscreenBuffer.imageView, nullptr);
         vmaDestroyImage(allocator, depthBuffer.image, depthBuffer.allocation);
@@ -803,26 +914,33 @@ int main() {
         vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
         vkDestroyPipeline(application.logicalDevice, alphaPipeline, nullptr);
         vkDestroyPipeline(application.logicalDevice, fullscreenPipeline, nullptr);
+        vkDestroyPipeline(application.logicalDevice, shadowPipeline, nullptr);
         vkDestroyShaderModule(application.logicalDevice, colourVertexShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, colourFragmentShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, alphaFragmentShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, fullscreenVertexShader, nullptr);
         vkDestroyShaderModule(application.logicalDevice, fullscreenFragmentShader, nullptr);
+        vkDestroyShaderModule(application.logicalDevice, shadowVertexShader, nullptr);
+        vkDestroyShaderModule(application.logicalDevice, shadowFragmentShader, nullptr);
         vkDestroyPipelineLayout(application.logicalDevice, pipelineLayout, nullptr);
         vkDestroyPipelineLayout(application.logicalDevice, fullscreenPipelineLayout, nullptr);
+        vkDestroyPipelineLayout(application.logicalDevice, shadowPipelineLayout, nullptr);
 
         // Destroy descriptor set layouts
         vkDestroyDescriptorSetLayout(application.logicalDevice, worldDescriptorSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, textureDescriptorSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, lightDescriptorSetLayout, nullptr);
         vkDestroyDescriptorSetLayout(application.logicalDevice, fullscreenDescriptorSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(application.logicalDevice, shadowDescriptorSetLayout, nullptr);
 
         // Destroy Renderpass
         vkDestroyRenderPass(application.logicalDevice, renderPassColour, nullptr);
         vkDestroyRenderPass(application.logicalDevice, renderPassFullscreen, nullptr);
+        vkDestroyRenderPass(application.logicalDevice, renderPassShadows, nullptr);
 
         // Destroy frame buffers
         vkDestroyFramebuffer(application.logicalDevice, colourFramebuffer, nullptr);
+        vkDestroyFramebuffer(application.logicalDevice, shadowFramebuffer, nullptr);
         
         // Destroy memory
         vmaDestroyAllocator(allocator);
@@ -953,6 +1071,59 @@ namespace {
         }
 
         return allocator;
+    }
+
+    VkRenderPass createShadowRenderPass(app::AppContext& app) {
+        // Define the attatchments of the render pass
+        // The swapchain attatchment
+        VkAttachmentDescription attachments[1]{};
+        // The depth buffer attachment
+        attachments[0].format = VK_FORMAT_D32_SFLOAT;
+        attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+        attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        attachments[0].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        // Define the attatchment propeties for a subpass
+        // Depth part of subpass using attatchment 1
+        VkAttachmentReference depthAttachment{};
+        depthAttachment.attachment = 0; // this refers to attachments[1]
+        depthAttachment.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        // Provide a description of the subpass
+        VkSubpassDescription subpasses[1]{};
+        subpasses[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpasses[0].pDepthStencilAttachment = &depthAttachment;
+
+        // Set the dependencies of each subpass
+        VkSubpassDependency subpassDependencies[1]{};
+        // For the depth
+        subpassDependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+        subpassDependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+        subpassDependencies[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        subpassDependencies[0].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        subpassDependencies[0].dstSubpass = 0;
+        subpassDependencies[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+        subpassDependencies[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+
+        // Combine all the data to create the renderpass info
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = 1;
+        renderPassInfo.pAttachments = attachments;
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = subpasses;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies = subpassDependencies;
+
+        // Create the renderpass
+        VkRenderPass renderPass;
+        if (vkCreateRenderPass(app.logicalDevice, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create renderpass.");
+        }
+
+        return renderPass;
     }
 
     VkRenderPass createColourRenderPass(app::AppContext& app) {
@@ -1159,7 +1330,7 @@ namespace {
         bindings[0].binding = 0;
         bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         bindings[0].descriptorCount = 1;         // MAX NUMBER OF LIGHTS
-        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
         // Set the info of the descriptor
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
@@ -1177,6 +1348,33 @@ namespace {
     }
 
     VkDescriptorSetLayout createFullscreenDescriptorSetLayout(app::AppContext& app) {
+        // Set the bindings for the descriptor
+        // These are accessed in the shader as binding = n
+        // All data passed into the shaders must have a binding
+        int const numberOfBindings = 1;
+        VkDescriptorSetLayoutBinding bindings[numberOfBindings]{};
+        // Colour / Diffuse texture
+        bindings[0].binding = 0;
+        bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[0].descriptorCount = 1;
+        bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        // Set the info of the descriptor
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
+        descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        descriptorSetLayoutInfo.bindingCount = numberOfBindings;
+        descriptorSetLayoutInfo.pBindings = bindings;
+        descriptorSetLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT;
+
+        VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+        if (vkCreateDescriptorSetLayout(app.logicalDevice, &descriptorSetLayoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor set layout");
+        }
+
+        return descriptorSetLayout;
+    }
+
+    VkDescriptorSetLayout createShadowDescriptorSetLayout(app::AppContext& app) {
         // Set the bindings for the descriptor
         // These are accessed in the shader as binding = n
         // All data passed into the shaders must have a binding
@@ -1519,7 +1717,118 @@ namespace {
         return pipeline;
     }
 
-    VkFramebuffer createFramebuffer(app::AppContext& app, VkRenderPass renderPass, std::vector<VkImageView>& buffers) {
+    VkPipeline createShadowPipeline(app::AppContext& app, VkPipelineLayout pipeLayout,
+        VkRenderPass renderPass, VkShaderModule vertexShader, VkShaderModule fragmentShader) {
+        
+        // Detail the shader stages of the pipeline
+        VkPipelineShaderStageCreateInfo shaderStages[2]{};
+        shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        shaderStages[0].module = vertexShader;
+        shaderStages[0].pName = "main";
+        shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        shaderStages[1].module = fragmentShader;
+        shaderStages[1].pName = "main";
+
+        // Inputs into the vertex shader
+        VkVertexInputBindingDescription vertexInputs[1]{};
+        // Positions 3 floats
+        vertexInputs[0].binding = 0;
+        vertexInputs[0].stride = sizeof(float) * 3;
+        vertexInputs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        // Attributes of the above inputs
+        VkVertexInputAttributeDescription vertexAttributes[1]{};
+        // Positions
+        vertexAttributes[0].binding = 0;
+        vertexAttributes[0].location = 0;
+        vertexAttributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+        vertexAttributes[0].offset = 0;
+
+        // Vertex shader info using the above descriptions
+        VkPipelineVertexInputStateCreateInfo vertexInfo{};
+        vertexInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInfo.vertexBindingDescriptionCount = 1;
+        vertexInfo.pVertexBindingDescriptions = vertexInputs;
+        vertexInfo.vertexAttributeDescriptionCount = 1;
+        vertexInfo.pVertexAttributeDescriptions = vertexAttributes;
+
+        // Details about the topology of the input vertices
+        VkPipelineInputAssemblyStateCreateInfo assemblyInfo{};
+        assemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        assemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        assemblyInfo.primitiveRestartEnable = VK_FALSE;
+
+        // Set the viewport to have to be the full screen
+        VkViewport viewport{};
+        viewport.x = 0.f;
+        viewport.y = 0.f;
+        viewport.width = float(DEPTH_RES);
+        viewport.height = float(DEPTH_RES);
+        viewport.minDepth = 0.f;
+        viewport.maxDepth = 1.f;
+
+        VkRect2D scissor{};
+        scissor.offset = VkOffset2D{ 0, 0 };
+        scissor.extent = VkExtent2D{ DEPTH_RES, DEPTH_RES };
+
+        // Assign the information about the viewport
+        VkPipelineViewportStateCreateInfo viewportInfo{};
+        viewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportInfo.viewportCount = 1;
+        viewportInfo.pViewports = &viewport;
+        viewportInfo.scissorCount = 1;
+        viewportInfo.pScissors = &scissor;
+
+        // Detail the rasterisation settings
+        VkPipelineRasterizationStateCreateInfo rasterizationInfo{};
+        rasterizationInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizationInfo.depthClampEnable = VK_FALSE;
+        rasterizationInfo.rasterizerDiscardEnable = VK_FALSE;
+        rasterizationInfo.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizationInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        rasterizationInfo.depthBiasEnable = VK_FALSE;
+        rasterizationInfo.lineWidth = 1.f;
+
+        // Multisampling rules
+        VkPipelineMultisampleStateCreateInfo samplingInfo{};
+        samplingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        samplingInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        // Info on the depth attatchment
+        VkPipelineDepthStencilStateCreateInfo depthInfo{};
+        depthInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthInfo.depthTestEnable = VK_TRUE;
+        depthInfo.depthWriteEnable = VK_TRUE;
+        depthInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        depthInfo.minDepthBounds = 0.f;
+        depthInfo.maxDepthBounds = 1.f;
+
+        // Set the info about the entire pipeline using the above details set
+        VkGraphicsPipelineCreateInfo pipeInfo{};
+        pipeInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipeInfo.stageCount = 2;
+        pipeInfo.pStages = shaderStages;
+        pipeInfo.pVertexInputState = &vertexInfo;
+        pipeInfo.pInputAssemblyState = &assemblyInfo;
+        pipeInfo.pViewportState = &viewportInfo;
+        pipeInfo.pRasterizationState = &rasterizationInfo;
+        pipeInfo.pMultisampleState = &samplingInfo;
+        pipeInfo.pDepthStencilState = &depthInfo;
+        pipeInfo.layout = pipeLayout;
+        pipeInfo.renderPass = renderPass;
+        pipeInfo.subpass = 0;
+
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        if (vkCreateGraphicsPipelines(app.logicalDevice, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &pipeline) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create graphics pipeline.");
+        }
+
+        return pipeline;
+    }
+
+    VkFramebuffer createFramebuffer(app::AppContext& app, VkRenderPass renderPass, std::vector<VkImageView>& buffers, uint32_t width, uint32_t height) {
         // Provides the information to create the framebuffer with
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -1527,8 +1836,8 @@ namespace {
         framebufferInfo.renderPass = renderPass;
         framebufferInfo.attachmentCount = std::uint32_t(buffers.size());
         framebufferInfo.pAttachments = buffers.data();
-        framebufferInfo.width = app.swapchainExtent.width;
-        framebufferInfo.height = app.swapchainExtent.height;
+        framebufferInfo.width = width;
+        framebufferInfo.height = height;
         framebufferInfo.layers = 1;
 
         // Create the framebuffer
@@ -1553,6 +1862,28 @@ namespace {
         samplerInfo.mipLodBias = 0.f;
         samplerInfo.anisotropyEnable = VK_TRUE;
         samplerInfo.maxAnisotropy = 16;
+
+        VkSampler sampler = VK_NULL_HANDLE;
+        if (vkCreateSampler(app.logicalDevice, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create sampler.");
+        }
+
+        return sampler;
+    }
+
+    VkSampler createShadowSampler(app::AppContext& app) {
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.minLod = 0.f;
+        samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+        samplerInfo.mipLodBias = 0.f;
+        samplerInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 
         VkSampler sampler = VK_NULL_HANDLE;
         if (vkCreateSampler(app.logicalDevice, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
@@ -1804,15 +2135,19 @@ namespace {
         VkBuffer worldUniformBuffer, WorldView worldUniform,        // World Uniform
         VkRenderPass renderPass, VkFramebuffer frameBuffer,         // Colour Render pass
         VkRenderPass fullRenderPass, VkFramebuffer swapFrameBuffer, // Full screen render pass
-        VkRect2D renderArea,
+        VkRenderPass shadowRenderPass, VkFramebuffer shadowFrameBuffer, // Shadow render pass
+        VkRect2D renderArea, VkRect2D shadowArea,
         VkPipeline pipeline, VkPipeline alphaPipeline,              // Pipelines
         VkPipeline fullscreenPipeline,                              // Pipelines
+        VkPipeline shadowPipeline,                                  // Pipelines
         VkPipelineLayout pipelineLayout,                            // Pipelines
         VkPipelineLayout fullscreenPipelineLayout,                  // Pipelines
+        VkPipelineLayout shadowPipelineLayout,                      // Pipelines
         VkDescriptorSet worldDescriptorSet,                         // World descriptors
         VkDescriptorSet textureDescriptorSet,                       // Texture descriptors
         VkDescriptorSet lightingDescriptorSet,                      // Lighting descriptors
         VkDescriptorSet fullscreenDescriptorSet,                    // Fullscreen descriptor
+        VkDescriptorSet shadowDescriptorSet,                        // Shadow descriptor
         std::vector<model::Mesh>& meshes,                           // Mesh data
         std::vector<model::Mesh>& alphaMeshes,                      // Mesh data
         std::vector<VkDeviceSize>& vertexOffsets,                   // Per vertex data
@@ -1844,6 +2179,43 @@ namespace {
             commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
         );
 
+        // Define a colour for the background of the shadow render pass
+        VkClearValue clearValuesShadow[1]{};
+        clearValuesShadow[0].depthStencil.depth = 1.f;
+
+        // Begin the shadows render pass ==========================================================
+        VkRenderPassBeginInfo renderPassInfoShadow{};
+        renderPassInfoShadow.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfoShadow.renderPass = shadowRenderPass;
+        renderPassInfoShadow.framebuffer = shadowFrameBuffer;
+        renderPassInfoShadow.renderArea = shadowArea;
+        renderPassInfoShadow.clearValueCount = 1;
+        renderPassInfoShadow.pClearValues = clearValuesShadow;
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfoShadow, VK_SUBPASS_CONTENTS_INLINE);
+
+        // Select a pipeline to draw with
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
+
+        // Bind the uniforms to the pipeline
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipelineLayout, 0, 1, &lightingDescriptorSet, 0, nullptr);
+
+        // Draw each separate mesh to screen
+        for (size_t i = 0; i < meshes.size(); i++) {
+            // Bind the per vertex buffers
+            VkBuffer buffers[1] = { meshes[i].vertexPositions.buffer};
+            VkDeviceSize offsets[1]{};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
+
+            // Bind the index buffer
+            vkCmdBindIndexBuffer(commandBuffer, meshes[i].indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+            // Do the draw call
+            vkCmdDrawIndexed(commandBuffer, meshes[i].numberOfIndices, 1, 0, 0, 0);
+        }
+
+        // End the renderpass for shadows =========================================================
+        vkCmdEndRenderPass(commandBuffer);
+
         // Define a colour for background of the renderpass
         VkClearValue backgroundColour[2]{};
         // Swapchain colour background
@@ -1854,7 +2226,7 @@ namespace {
         // Depth buffer clear background
         backgroundColour[1].depthStencil.depth = 1.0f;
 
-        // Begin the render pass
+        // Begin the render pass for the colour ===================================================
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = renderPass;
@@ -1871,6 +2243,7 @@ namespace {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &worldDescriptorSet, 0, nullptr);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &textureDescriptorSet, 0, nullptr);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 2, 1, &lightingDescriptorSet, 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 3, 1, &shadowDescriptorSet, 0, nullptr);
 
         // Draw each separate mesh to screen
         for (size_t i = 0; i < meshes.size(); i++) {
@@ -1902,10 +2275,10 @@ namespace {
             vkCmdDrawIndexed(commandBuffer, alphaMeshes[i].numberOfIndices, 1, 0, 0, 0);
         }
 
-        // End the renderpass
+        // End the renderpass for colour ==========================================================
         vkCmdEndRenderPass(commandBuffer);
 
-        // Begin the full screen render pass
+        // Begin the full screen render pass ======================================================
         VkRenderPassBeginInfo renderPassInfoSecond{};
         renderPassInfoSecond.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfoSecond.renderPass = fullRenderPass;
@@ -1924,6 +2297,7 @@ namespace {
         // Draw one triangle
         vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
+        // End the full screen render pass ========================================================
         vkCmdEndRenderPass(commandBuffer);
 
         // End the command buffer recording

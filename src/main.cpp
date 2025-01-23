@@ -725,10 +725,14 @@ int main() {
 
                 // If format has changed the render pass needs remaking before framebuffers
                 if (application.swapchainFormat != oldFormat) {
-                    // Clean up old render pass
+                    // Clean up old render passes
                     vkDestroyRenderPass(application.logicalDevice, renderPassColour, nullptr);
-                    // Remake the render pass
+                    vkDestroyRenderPass(application.logicalDevice, renderPassFullscreen, nullptr);
+                    vkDestroyRenderPass(application.logicalDevice, renderPassShadows, nullptr);
+                    // Remake the render passes
                     renderPassColour = createColourRenderPass(application);
+                    renderPassFullscreen = createFinalRenderPass(application);
+                    renderPassShadows = createShadowRenderPass(application);
                 }
 
                 // Destroy the old framebuffers
@@ -736,6 +740,8 @@ int main() {
                     vkDestroyFramebuffer(application.logicalDevice, swapchainFramebuffers[i], nullptr);
                 }
                 swapchainFramebuffers.clear();
+                vkDestroyFramebuffer(application.logicalDevice, colourFramebuffer, nullptr);
+                vkDestroyFramebuffer(application.logicalDevice, shadowFramebuffer, nullptr);
 
                 // Remake the depth buffer if size has changed
                 if (application.swapchainExtent.height != oldExtent.height ||
@@ -746,6 +752,15 @@ int main() {
                     // Remake
                     depthBuffer = utility::createImageSet(application, allocator, VK_FORMAT_D32_SFLOAT,
                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, application.swapchainExtent);
+                
+                    vmaDestroyImage(allocator, fullscreenBuffer.image, fullscreenBuffer.allocation);
+                    vkDestroyImageView(application.logicalDevice, fullscreenBuffer.imageView, nullptr);
+                    fullscreenBuffer = utility::createImageSet(application, allocator,
+                        application.swapchainFormat,
+                        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                        VK_IMAGE_ASPECT_COLOR_BIT,
+                        application.swapchainExtent
+                    );
                 }
                 
                 // Remake the framebuffers
@@ -753,12 +768,25 @@ int main() {
                     // Get the attatchments
                     std::vector<VkImageView> swapchainAttatchments;
                     swapchainAttatchments.emplace_back(application.swapchainImageViews[i]);
-                    swapchainAttatchments.emplace_back(depthBuffer.imageView);
 
                     // Create the framebuffer
-                    swapchainFramebuffers.emplace_back(createFramebuffer(application, renderPassColour, swapchainAttatchments,
+                    swapchainFramebuffers.emplace_back(createFramebuffer(application, renderPassFullscreen, swapchainAttatchments,
                         application.swapchainExtent.width, application.swapchainExtent.height));
                 }
+
+                // Reset colour attatchments
+                colourAttatchments.clear();
+                colourAttatchments.emplace_back(fullscreenBuffer.imageView);
+                colourAttatchments.emplace_back(depthBuffer.imageView);
+
+                colourFramebuffer = createFramebuffer(application, renderPassColour, colourAttatchments,
+                    application.swapchainExtent.width, application.swapchainExtent.height);
+                
+                shadowAttatchments.clear();
+                shadowAttatchments.emplace_back(shadowBuffer.imageView);
+                
+                shadowFramebuffer = createFramebuffer(application, renderPassShadows, shadowAttatchments,
+                    shadowExtent.width, shadowExtent.height);
 
                 // If size has changed, the pipelines need remaking
                 if (application.swapchainExtent.height != oldExtent.height || 
@@ -766,11 +794,26 @@ int main() {
                     // Clean up old pipeline
                     vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
                     vkDestroyPipeline(application.logicalDevice, alphaPipeline, nullptr);
+                    vkDestroyPipeline(application.logicalDevice, fullscreenPipeline, nullptr);
+                    vkDestroyPipeline(application.logicalDevice, shadowPipeline, nullptr);
                     // Remake pipeline
                     pipeline = createPipeline(application, pipelineLayout, renderPassColour,
                         colourVertexShader, colourFragmentShader);
                     alphaPipeline = createPipeline(application, pipelineLayout, renderPassColour,
                         colourVertexShader, alphaFragmentShader, true);
+                    fullscreenPipeline = createFullscreenPipeline(application, fullscreenPipelineLayout, renderPassFullscreen, 
+                        fullscreenVertexShader, fullscreenFragmentShader);
+                    shadowPipeline = createShadowPipeline(application, shadowPipelineLayout, renderPassShadows, 
+                        shadowVertexShader, shadowFragmentShader);
+                
+                    // Refresh the descriptor sets
+                    frameBufferDescriptorSet = createFramebufferDescriptorSet(application, descriptorPool,
+                        fullscreenDescriptorSetLayout, fullscreenBuffer, sampler);
+
+                    // Create and initialise the shadow framebuffer
+                    shadowDescriptorSet = createFramebufferDescriptorSet(application, descriptorPool,
+                        shadowDescriptorSetLayout, shadowBuffer, shadowSampler);
+
                 }
 
                 // Reset the resized window bool
@@ -1083,7 +1126,7 @@ namespace {
         attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        attachments[0].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         // Define the attatchment propeties for a subpass
         // Depth part of subpass using attatchment 1
@@ -1391,7 +1434,7 @@ namespace {
         descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         descriptorSetLayoutInfo.bindingCount = numberOfBindings;
         descriptorSetLayoutInfo.pBindings = bindings;
-        descriptorSetLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT;
+        //descriptorSetLayoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT;
 
         VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
         if (vkCreateDescriptorSetLayout(app.logicalDevice, &descriptorSetLayoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {

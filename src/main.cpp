@@ -716,15 +716,21 @@ int main() {
             // Has the window been resized and if so resize the swapchain
             if (resizeWindow) {
                 std::cout << "Changing" << std::endl;
+
+                vkDeviceWaitIdle(application.logicalDevice);
+                
                 // Remember the old format and size of the swapchain
                 VkFormat oldFormat = application.swapchainFormat;
                 VkExtent2D oldExtent = application.swapchainExtent;
+                std::cout << oldExtent.height << " " << oldExtent.width << std::endl;
 
                 // Remake the swapchain
                 recreateSwapchain(application);
 
                 // If format has changed the render pass needs remaking before framebuffers
                 if (application.swapchainFormat != oldFormat) {
+                    std::cout << "Changed Format - Remaking Render passes" << std::endl;
+
                     // Clean up old render passes
                     vkDestroyRenderPass(application.logicalDevice, renderPassColour, nullptr);
                     vkDestroyRenderPass(application.logicalDevice, renderPassFullscreen, nullptr);
@@ -746,13 +752,20 @@ int main() {
                 // Remake the depth buffer if size has changed
                 if (application.swapchainExtent.height != oldExtent.height ||
                     application.swapchainExtent.width != oldExtent.width) {
+                    
+                    std::cout << "Changed Extent - Remaking buffers" << std::endl;
+
                     // Clean up old depth buffer
+                    // Remake the depth buffer
                     vmaDestroyImage(allocator, depthBuffer.image, depthBuffer.allocation);
                     vkDestroyImageView(application.logicalDevice, depthBuffer.imageView, nullptr);
-                    // Remake
-                    depthBuffer = utility::createImageSet(application, allocator, VK_FORMAT_D32_SFLOAT,
-                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, application.swapchainExtent);
+                    depthBuffer = utility::createImageSet(application, allocator, 
+                        VK_FORMAT_D32_SFLOAT,
+                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 
+                        VK_IMAGE_ASPECT_DEPTH_BIT, 
+                        application.swapchainExtent);
                 
+                    // Remake the full screen buffer
                     vmaDestroyImage(allocator, fullscreenBuffer.image, fullscreenBuffer.allocation);
                     vkDestroyImageView(application.logicalDevice, fullscreenBuffer.imageView, nullptr);
                     fullscreenBuffer = utility::createImageSet(application, allocator,
@@ -760,6 +773,16 @@ int main() {
                         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
                         VK_IMAGE_ASPECT_COLOR_BIT,
                         application.swapchainExtent
+                    );
+
+                    // Shadow buffer
+                    vmaDestroyImage(allocator, shadowBuffer.image, shadowBuffer.allocation);
+                    vkDestroyImageView(application.logicalDevice, shadowBuffer.imageView, nullptr);
+                    shadowBuffer = utility::createImageSet(application, allocator,
+                        VK_FORMAT_D32_SFLOAT,
+                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                        VK_IMAGE_ASPECT_DEPTH_BIT,
+                        shadowExtent
                     );
                 }
                 
@@ -791,6 +814,8 @@ int main() {
                 // If size has changed, the pipelines need remaking
                 if (application.swapchainExtent.height != oldExtent.height || 
                     application.swapchainExtent.width != oldExtent.width) {
+                    std::cout << "Changed Extent - Remaking pipelines" << std::endl;
+                    
                     // Clean up old pipeline
                     vkDestroyPipeline(application.logicalDevice, pipeline, nullptr);
                     vkDestroyPipeline(application.logicalDevice, alphaPipeline, nullptr);
@@ -815,6 +840,10 @@ int main() {
                         shadowDescriptorSetLayout, shadowBuffer, shadowSampler);
 
                 }
+
+                // Get the render area
+                renderArea.extent = application.swapchainExtent;
+                renderArea.offset = VkOffset2D{ 0,0 };
 
                 // Reset the resized window bool
                 resizeWindow = false;
@@ -2160,8 +2189,8 @@ namespace {
         for (size_t i = 0; i < app.swapchainImageViews.size(); i++) {
             vkDestroyImageView(app.logicalDevice, app.swapchainImageViews[i], nullptr);
         }
-        app.swapchainImages.clear();
         app.swapchainImageViews.clear();
+        app.swapchainImages.clear();
 
         // Destroy old swapchain
         vkDestroySwapchainKHR(app.logicalDevice, app.swapchain, nullptr);
